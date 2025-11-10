@@ -1,35 +1,40 @@
 import React, { useEffect, useState } from "react"
 import { Plus, Edit, Trash2, Search } from "lucide-react"
-import { userAPI, departmentAPI } from "@/services/api"
+import { userAPI, departmentAPI, positionAPI } from "@/services/api"
 import toast from "react-hot-toast"
+
+const initialFormState = {
+  user_id: "",
+  full_name: "",
+  gender: "Nam",
+  position_id: "",
+  organization_unit_id: "",
+  email: "",
+  phone: "",
+  address: "",
+  active: "Đang làm việc",
+}
 
 const StaffManagement = () => {
   const [staffList, setStaffList] = useState([])
   const [departments, setDepartments] = useState([])
+  const [positions, setPositions] = useState([])
   const [search, setSearch] = useState("")
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [formData, setFormData] = useState({
-    user_id: "",
-    full_name: "",
-    gender: "Nam",
-    position: "",
-    organization_unit_id: "",
-    email: "",
-    phone: "",
-    address: "",
-    active: "Đang làm việc",
-  })
+  const [formData, setFormData] = useState({ ...initialFormState })
 
   // Load dữ liệu
   const loadData = async () => {
     try {
-      const [staffRes, deptRes] = await Promise.all([
+      const [staffRes, deptRes, posRes] = await Promise.all([
         userAPI.getAllByRole("staff"),
         departmentAPI.getAll(),
+        positionAPI.getAll(),
       ])
       setStaffList(staffRes.data)
       setDepartments(deptRes.data)
+      setPositions(posRes.data)
     } catch (err) {
       toast.error("Không tải được dữ liệu nhân viên hành chính")
     }
@@ -46,16 +51,24 @@ const StaffManagement = () => {
     try {
       if (editing) {
         // Prevent sending empty strings for required FKs
-        const payload = { ...formData }
-        if (payload.organization_unit_id === "") delete payload.organization_unit_id
-        if (payload.position === "") delete payload.position
+        const payload = {
+          ...formData,
+          position_id: formData.position_id ? Number(formData.position_id) : undefined,
+          organization_unit_id: formData.organization_unit_id ? Number(formData.organization_unit_id) : undefined,
+        }
         await userAPI.update(editing.id, payload)
         toast.success("Cập nhật nhân viên thành công")
       } else {
-        await userAPI.create({ ...formData, role: "staff" })
+        await userAPI.create({
+          ...formData,
+          role: "staff",
+          position_id: formData.position_id ? Number(formData.position_id) : undefined,
+          organization_unit_id: formData.organization_unit_id ? Number(formData.organization_unit_id) : undefined,
+        })
         toast.success("Thêm nhân viên hành chính thành công")
       }
       setShowModal(false)
+      setFormData({ ...initialFormState })
       await loadData()
     } catch {
       toast.error("Lỗi khi lưu dữ liệu")
@@ -80,7 +93,11 @@ const StaffManagement = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Quản lý nhân viên hành chính</h1>
         <button
-          onClick={() => { setEditing(null); setShowModal(true) }}
+          onClick={() => {
+            setEditing(null)
+            setFormData({ ...initialFormState })
+            setShowModal(true)
+          }}
           className="btn-primary flex items-center space-x-2"
         >
           <Plus className="w-4 h-4" />
@@ -125,33 +142,35 @@ const StaffManagement = () => {
               <td className="table-cell">{s.email}</td>
               <td className="table-cell">{s.phone}</td>
               <td className="table-cell">{s.active}</td>
-              <td className="table-cell flex space-x-2">
-                <button
-                  onClick={() => {
-                    setEditing(s)
-                    setFormData({
-                      user_id: s.user_id ?? "",
-                      full_name: s.full_name ?? "",
-                      gender: s.gender ?? "Nam",
-                      position: s.position ?? "",
-                      organization_unit_id: s.organization_unit_id ?? "",
-                      email: s.email ?? "",
-                      phone: s.phone ?? "",
-                      address: s.address ?? "",
-                      active: s.active ?? "Đang làm việc",
-                    })
-                    setShowModal(true)
-                  }}
-                  className="text-blue-600 hover:text-blue-900"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDelete(s)}
-                  className="text-red-600 hover:text-red-900"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+              <td className="table-cell">
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => {
+                      setEditing(s)
+                      setFormData({
+                        user_id: s.user_id ?? "",
+                        full_name: s.full_name ?? "",
+                        gender: s.gender ?? "Nam",
+                        position_id: s.position_id ? String(s.position_id) : "",
+                        organization_unit_id: s.organization_unit_id ? String(s.organization_unit_id) : "",
+                        email: s.email ?? "",
+                        phone: s.phone ?? "",
+                        address: s.address ?? "",
+                        active: s.active ?? "Đang làm việc",
+                      })
+                      setShowModal(true)
+                    }}
+                    className="text-blue-600 hover:text-blue-900"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(s)}
+                    className="text-red-600 hover:text-red-900"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -190,17 +209,24 @@ const StaffManagement = () => {
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
               </select>
-              <input
-                type="text"
+              <select
                 className="input-field"
-                placeholder="Chức vụ"
-                value={formData.position ?? ""}
-                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-              />
+                value={formData.position_id ?? ""}
+                onChange={(e) => setFormData({ ...formData, position_id: e.target.value })}
+                required
+              >
+                <option value="">Chọn chức vụ</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.position_name}
+                  </option>
+                ))}
+              </select>
               <select
                 value={formData.organization_unit_id ?? ""}
                 onChange={(e) => setFormData({ ...formData, organization_unit_id: e.target.value })}
                 className="input-field"
+                required
               >
                 <option value="">Chọn phòng ban</option>
                 {departments.map((d) => (
@@ -215,9 +241,10 @@ const StaffManagement = () => {
                 placeholder="Email"
                 value={formData.email ?? ""}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
               />
               <input
-                type="text"
+                type="tel"
                 className="input-field"
                 placeholder="Số điện thoại"
                 value={formData.phone ?? ""}

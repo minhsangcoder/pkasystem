@@ -144,6 +144,47 @@ async function loadSampleData() {
   }
 }
 
+async function applyDatabasePatches() {
+  const qi = sequelize.getQueryInterface();
+  console.log("[DB] Applying database patches...");
+
+  // Ensure employees table has degree column
+  try {
+    const employeeColumns = await qi.describeTable("employees");
+    if (employeeColumns && !employeeColumns.degree) {
+      console.log("[DB] Adding 'degree' column to employees...");
+      await qi.addColumn("employees", "degree", {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      });
+      console.log("✅ [DB] Added 'degree' column to employees");
+    }
+  } catch (err) {
+    console.warn("⚠️ [DB] Could not inspect/add columns to employees:", err.message);
+  }
+
+  // Ensure curriculum_structures has program_id column
+  try {
+    const csColumns = await qi.describeTable("curriculum_structures");
+    if (csColumns && !csColumns.program_id) {
+      console.log("[DB] Adding 'program_id' column to curriculum_structures...");
+      await qi.addColumn("curriculum_structures", "program_id", {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: "programs",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "SET NULL",
+      });
+      console.log("✅ [DB] Added 'program_id' column to curriculum_structures");
+    }
+  } catch (err) {
+    console.warn("⚠️ [DB] Could not inspect/add columns to curriculum_structures:", err.message);
+  }
+}
+
 // =======================
 // Models - ENHANCED WITH STATUS
 // =======================
@@ -254,6 +295,10 @@ const Employee = sequelize.define("Employee", {
   gender: {
     type: DataTypes.STRING(10),
     defaultValue: 'Other'
+  },
+  degree: {
+    type: DataTypes.STRING(50),
+    allowNull: true
   },
   employee_type: {
     type: DataTypes.STRING(20),
@@ -1275,6 +1320,8 @@ app.get("/api/users", async (req, res) => {
         role: empData.employee_type,
         organization_unit_id: empData.department_id,
         active: empData.status === 'Active' ? 'Đang làm việc' : 'Nghỉ việc',
+        degree: empData.degree || null,
+        degrees: empData.degree ? String(empData.degree).split(',').map(s => s.trim()).filter(Boolean) : [],
         position: empData.Position?.position_name || null,
         OrganizationUnit: empData.Department ? { id: empData.Department.id, name: empData.Department.department_name } : null
       };
@@ -1314,6 +1361,8 @@ app.get("/api/users/:id", async (req, res) => {
       role: empData.employee_type,
       organization_unit_id: empData.department_id,
       active: empData.status === 'Active' ? 'Đang làm việc' : 'Nghỉ việc',
+      degree: empData.degree || null,
+      degrees: empData.degree ? String(empData.degree).split(',').map(s => s.trim()).filter(Boolean) : [],
       position: empData.Position?.position_name || null,
       OrganizationUnit: empData.Department ? { id: empData.Department.id, name: empData.Department.department_name } : null
     };
@@ -1332,7 +1381,7 @@ app.post("/api/users", async (req, res) => {
       user_id, // Frontend uses user_id, backend uses employee_code
       full_name, // Frontend uses full_name, backend uses first_name + last_name
       role, // Frontend uses role, backend uses employee_type
-      gender, position, organization_unit_id, email, phone, address, active,
+      gender, degree, position, organization_unit_id, email, phone, address, active,
       // Also accept backend fields directly
       employee_code, first_name, last_name, employee_type,
       position_id, department_id, manager_id, hire_date, salary, status
@@ -1358,12 +1407,43 @@ app.post("/api/users", async (req, res) => {
     employeeData.phone = phone;
     employeeData.address = address;
     employeeData.gender = gender || 'Other';
+    if (Array.isArray(degree)) {
+      // store as comma-separated string for compatibility
+      employeeData.degree = degree.join(', ');
+    } else if (degree !== undefined) {
+      employeeData.degree = degree;
+    }
     employeeData.position_id = position_id || position;
     employeeData.department_id = department_id || organization_unit_id;
     employeeData.manager_id = manager_id;
     employeeData.hire_date = hire_date || new Date().toISOString().split('T')[0];
     employeeData.salary = salary;
     employeeData.status = status || (active === 'Đang làm việc' ? 'Active' : 'Inactive');
+
+    if (!employeeData.position_id) {
+      let fallbackDepartmentId = employeeData.department_id;
+      if (!fallbackDepartmentId) {
+        fallbackDepartmentId = await Department.min('id');
+      }
+      if (!fallbackDepartmentId) {
+        return res.status(400).json({ error: "Vui lòng chọn phòng ban trước khi tạo giảng viên" });
+      }
+      let defaultPosition = await Position.findOne({ where: { position_code: 'LECTURER_DEFAULT' } });
+      if (!defaultPosition) {
+        defaultPosition = await Position.create({
+          position_code: 'LECTURER_DEFAULT',
+          position_name: 'Giảng viên',
+          level: 1,
+          description: 'Vị trí mặc định cho giảng viên',
+          department_id: fallbackDepartmentId,
+          is_active: true,
+        });
+      }
+      employeeData.position_id = defaultPosition.id;
+      if (!employeeData.department_id && defaultPosition.department_id) {
+        employeeData.department_id = defaultPosition.department_id;
+      }
+    }
 
     if (!employeeData.employee_code || !employeeData.first_name || !employeeData.last_name || 
         !employeeData.email || !employeeData.position_id || !employeeData.department_id) {
@@ -1397,6 +1477,8 @@ app.post("/api/users", async (req, res) => {
       role: empData.employee_type,
       organization_unit_id: empData.department_id,
       active: empData.status === 'Active' ? 'Đang làm việc' : 'Nghỉ việc',
+      degree: empData.degree || null,
+      degrees: empData.degree ? String(empData.degree).split(',').map(s => s.trim()).filter(Boolean) : [],
       position: empData.Position?.position_name || null,
       OrganizationUnit: empData.Department ? { id: empData.Department.id, name: empData.Department.department_name } : null
     };
@@ -1415,9 +1497,11 @@ app.put("/api/users/:id", async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy người dùng" });
     }
 
+    console.log('[PUT /api/users/:id] payload:', req.body);
+
     // Map frontend format to backend format
     const {
-      user_id, full_name, role, gender, position, organization_unit_id,
+      user_id, full_name, role, gender, degree, position, organization_unit_id,
       email, phone, address, active,
       // Also accept backend fields directly
       employee_code, first_name, last_name, employee_type,
@@ -1441,6 +1525,13 @@ app.put("/api/users/:id", async (req, res) => {
     if (phone !== undefined) updateData.phone = phone === '' ? null : phone;
     if (address !== undefined) updateData.address = address === '' ? null : address;
     if (gender !== undefined) updateData.gender = gender;
+    if (degree !== undefined) {
+      if (Array.isArray(degree)) {
+        updateData.degree = degree.length ? degree.join(', ') : null;
+      } else {
+        updateData.degree = degree === '' ? null : degree;
+      }
+    }
 
     // Position mapping: skip if empty string to avoid FK errors
     if (position_id !== undefined) updateData.position_id = position_id;
@@ -1481,6 +1572,8 @@ app.put("/api/users/:id", async (req, res) => {
       role: empData.employee_type,
       organization_unit_id: empData.department_id,
       active: empData.status === 'Active' ? 'Đang làm việc' : 'Nghỉ việc',
+      degree: empData.degree || null,
+      degrees: empData.degree ? String(empData.degree).split(',').map(s => s.trim()).filter(Boolean) : [],
       position: empData.Position?.position_name || null,
       OrganizationUnit: empData.Department ? { id: empData.Department.id, name: empData.Department.department_name } : null
     };
@@ -1512,9 +1605,10 @@ app.get("/api/curriculum-structure", async (req, res) => {
     const structures = await CurriculumStructure.findAll({
       include: [
         { model: Major, as: 'Major', attributes: ['id', 'major_name', 'major_code'] },
-        { model: KnowledgeBlock, as: 'KnowledgeBlock', attributes: ['id', 'block_name', 'block_code'] }
+        { model: KnowledgeBlock, as: 'KnowledgeBlock', attributes: ['id', 'block_name', 'block_code'] },
+        { model: Program, as: 'Program', attributes: ['id', 'program_name', 'program_code'] }
       ],
-      order: [['major_id', 'ASC'], ['semester', 'ASC']]
+      order: [['program_id', 'ASC'], ['major_id', 'ASC'], ['semester', 'ASC']]
     });
     res.json(structures);
   } catch (error) {
@@ -1524,11 +1618,19 @@ app.get("/api/curriculum-structure", async (req, res) => {
 
 app.post("/api/curriculum-structure", async (req, res) => {
   try {
-    const { major_id, knowledge_block_id, semester, is_required = true, min_credits = 0, notes } = req.body;
-    if (!major_id || !knowledge_block_id) {
-      return res.status(400).json({ error: "Ngành học và khối kiến thức là bắt buộc" });
+    const { program_id, major_id, knowledge_block_id, semester, is_required = true, min_credits = 0, notes } = req.body;
+    if (!program_id || !major_id || !knowledge_block_id) {
+      return res.status(400).json({ error: "Chương trình đào tạo, ngành học và khối kiến thức là bắt buộc" });
     }
-    const structure = await CurriculumStructure.create({ major_id, knowledge_block_id, semester, is_required, min_credits, notes: notes || null });
+    const structure = await CurriculumStructure.create({
+      program_id,
+      major_id,
+      knowledge_block_id,
+      semester,
+      is_required,
+      min_credits,
+      notes: notes || null
+    });
     res.status(201).json(structure);
   } catch (error) {
     handleError(res, error, "Không thể thêm cấu trúc");
@@ -1590,7 +1692,11 @@ app.put("/api/knowledge-blocks/:id", async (req, res) => {
   try {
     const block = await KnowledgeBlock.findByPk(req.params.id);
     if (!block) return res.status(404).json({ error: "Không tìm thấy khối kiến thức" });
-    await block.update(req.body);
+    const updateData = { ...req.body };
+    // sanitize optional fields that may come as empty string from frontend
+    if (updateData.description === '') updateData.description = null;
+    if (updateData.major_id === '' || updateData.major_id === undefined) updateData.major_id = null;
+    await block.update(updateData);
     res.json(block);
   } catch (error) {
     handleError(res, error, "Không thể cập nhật khối kiến thức");
@@ -1601,7 +1707,34 @@ app.delete("/api/knowledge-blocks/:id", async (req, res) => {
   try {
     const block = await KnowledgeBlock.findByPk(req.params.id);
     if (!block) return res.status(404).json({ error: "Không tìm thấy khối kiến thức" });
-    await block.destroy();
+
+    await sequelize.transaction(async (transaction) => {
+      // Remove from many-to-many relation with programs (ensure join rows are gone)
+      try {
+        await block.setPrograms([], { transaction });
+      } catch (e) {
+        // Fallback: hard delete join rows if association alias mismatch
+        await sequelize.query(
+          "DELETE FROM program_knowledge_blocks WHERE knowledge_block_id = ?",
+          { replacements: [block.id], transaction }
+        );
+      }
+
+      // Remove curriculum structure rows referencing this knowledge block (cannot be NULL due to NOT NULL constraint)
+      await CurriculumStructure.destroy({
+        where: { knowledge_block_id: block.id },
+        transaction
+      });
+
+      // Nullify in courses
+      await Course.update(
+        { knowledge_block_id: null },
+        { where: { knowledge_block_id: block.id }, transaction }
+      );
+
+      await block.destroy({ transaction });
+    });
+
     res.json({ message: "Xóa khối kiến thức thành công" });
   } catch (error) {
     handleError(res, error, "Không thể xóa khối kiến thức");
@@ -1830,7 +1963,44 @@ app.delete("/api/programs/:id", async (req, res) => {
     if (!program) {
       return res.status(404).json({ error: "Không tìm thấy chương trình" });
     }
-    await program.destroy();
+
+    await sequelize.transaction(async (transaction) => {
+      // Remove many-to-many relationships
+      await program.setKnowledgeBlocks([], { transaction });
+
+      // Detach curriculum structures referencing this program
+      await CurriculumStructure.update(
+        { program_id: null },
+        {
+          where: { program_id: program.id },
+          transaction,
+          logging: console.log,
+        }
+      );
+
+      // Detach cohorts referencing this program
+      await Cohort.update(
+        { program_id: null },
+        {
+          where: { program_id: program.id },
+          transaction,
+          logging: console.log,
+        }
+      );
+
+      // Clear program from courses
+      await Course.update(
+        { program_id: null },
+        {
+          where: { program_id: program.id },
+          transaction,
+          logging: console.log,
+        }
+      );
+
+      await program.destroy({ transaction, logging: console.log });
+    });
+
     res.json({ message: "Xóa chương trình thành công" });
   } catch (error) {
     handleError(res, error, "Không thể xóa chương trình");
@@ -2056,8 +2226,31 @@ async function initializeServer() {
   }
 
   try {
-    console.log("[DB] Syncing database tables...");
-    await sequelize.sync(); // Nếu cần làm sạch, dùng { force: true }
+    // Clean up legacy data that might violate new validations/foreign keys
+    try {
+      console.log("[DB] Performing pre-sync data cleanup for curriculum structures...");
+      await sequelize.query("DROP TABLE IF EXISTS departments_backup");
+      await sequelize.query(`
+        DELETE FROM curriculum_structures
+        WHERE program_id IS NOT NULL
+          AND (
+            TRIM(CAST(program_id AS TEXT)) = ''
+            OR program_id NOT IN (SELECT id FROM programs)
+          )
+      `);
+      await sequelize.query(`
+        DELETE FROM curriculum_structures
+        WHERE major_id NOT IN (SELECT id FROM majors)
+           OR knowledge_block_id NOT IN (SELECT id FROM knowledge_blocks)
+      `);
+      console.log("✅ [DB] Pre-sync cleanup completed");
+    } catch (cleanupError) {
+      console.warn("⚠️ [DB] Pre-sync cleanup skipped:", cleanupError.message);
+    }
+
+    console.log("[DB] Syncing database tables (with alter)...");
+    await applyDatabasePatches();
+    await sequelize.sync(); // Đồng bộ cấu trúc bảng với model mới
     console.log("✅ [DB] Database tables synced successfully");
 
     await loadSampleData();
@@ -2068,6 +2261,15 @@ async function initializeServer() {
     });
   } catch (error) {
     console.error("❌ [SERVER] Server startup failed:", error.message);
+    if (error && Array.isArray(error.errors)) {
+      console.error("🔍 [SERVER] Validation details:", error.errors.map(e => ({
+        message: e.message,
+        path: e.path,
+        value: e.value
+      })));
+    } else if (error?.parent?.message) {
+      console.error("🔍 [SERVER] Parent error:", error.parent.message);
+    }
     process.exit(1);
   }
 }

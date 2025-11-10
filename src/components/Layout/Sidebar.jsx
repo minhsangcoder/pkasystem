@@ -10,7 +10,6 @@ import {
   Settings,
   Users,
   ChevronRight,
-  Eye,
   Calculator
 } from 'lucide-react'
 
@@ -30,7 +29,6 @@ const Sidebar = ({ isOpen, onToggle }) => {
     { path: '/knowledge-blocks', label: 'Quản lý khối kiến thức', icon: GitBranch },
     { path: '/curriculum-structure', label: 'Quản lý cấu trúc CTĐT', icon: BookOpen },
     { path: '/programs', label: 'Quản lý chương trình', icon: ClipboardList },
-    { path: '/curriculum-viewer', label: 'Hiển thị CTĐT', icon: Eye },
     { path: '/tuition-calculator', label: 'Tính học phí', icon: Calculator },
   ]
 

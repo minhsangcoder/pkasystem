@@ -3,24 +3,27 @@ import { Plus, Edit, Trash2, Search } from "lucide-react"
 import { userAPI, departmentAPI } from "@/services/api"
 import toast from "react-hot-toast"
 
+const DEGREE_OPTIONS = ["Giáo sư", "Phó giáo sư", "Tiến sĩ", "Thạc sĩ"]
+
+const initialFormState = {
+  user_id: "",
+  full_name: "",
+  gender: "Nam",
+  degrees: [],
+  organization_unit_id: "",
+  email: "",
+  phone: "",
+  address: "",
+  active: "Đang làm việc",
+}
+
 const LecturerManagement = () => {
   const [lecturers, setLecturers] = useState([])
   const [departments, setDepartments] = useState([])
   const [search, setSearch] = useState("")
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [formData, setFormData] = useState({
-    user_id: "",
-    full_name: "",
-    gender: "Nam",
-    degree: "",
-    position: "",
-    organization_unit_id: "",
-    email: "",
-    phone: "",
-    address: "",
-    active: "Đang làm việc",
-  })
+  const [formData, setFormData] = useState({ ...initialFormState })
 
   const loadData = async () => {
     try {
@@ -44,14 +47,27 @@ const LecturerManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
+      const degreeString = (formData.degrees || []).join(', ');
+      const payload = {
+        user_id: formData.user_id,
+        full_name: formData.full_name,
+        degree: degreeString,
+        gender: formData.gender,
+        organization_unit_id: formData.organization_unit_id ? Number(formData.organization_unit_id) : undefined,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        active: formData.active,
+      }
       if (editing) {
-        await userAPI.update(editing.id, formData)
+        await userAPI.update(editing.id, payload)
         toast.success("Cập nhật giảng viên thành công")
       } else {
-        await userAPI.create({ ...formData, role: "lecturer" })
+        await userAPI.create({ ...payload, role: "lecturer" })
         toast.success("Thêm giảng viên thành công")
       }
       setShowModal(false)
+      setFormData({ ...initialFormState })
       await loadData()
     } catch {
       toast.error("Lỗi lưu dữ liệu")
@@ -63,7 +79,11 @@ const LecturerManagement = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Quản lý giảng viên</h1>
         <button
-          onClick={() => { setEditing(null); setShowModal(true) }}
+          onClick={() => {
+            setEditing(null)
+            setFormData({ ...initialFormState })
+            setShowModal(true)
+          }}
           className="btn-primary flex items-center space-x-2"
         >
           <Plus className="w-4 h-4" />
@@ -99,23 +119,29 @@ const LecturerManagement = () => {
               <td className="table-cell">{l.user_id}</td>
               <td className="table-cell">{l.full_name}</td>
               <td className="table-cell">{l.gender}</td>
-              <td className="table-cell">{l.degree}</td>
+              <td className="table-cell">{Array.isArray(l.degrees) ? l.degrees.join(", ") : (l.degree ?? "")}</td>
               <td className="table-cell">{l.OrganizationUnit?.name}</td>
               <td className="table-cell">{l.active}</td>
               <td className="table-cell space-x-2">
                 <button
-                  onClick={() => { setEditing(l); setFormData({
-                    user_id: l.user_id ?? "",
-                    full_name: l.full_name ?? "",
-                    gender: l.gender ?? "Nam",
-                    degree: l.degree ?? "",
-                    position: l.position ?? "",
-                    organization_unit_id: l.organization_unit_id ?? "",
-                    email: l.email ?? "",
-                    phone: l.phone ?? "",
-                    address: l.address ?? "",
-                    active: l.active ?? "Đang làm việc",
-                  }); setShowModal(true) }}
+                  onClick={() => {
+                    const degArr = Array.isArray(l.degrees)
+                      ? l.degrees
+                      : (l.degree ? String(l.degree).split(',').map(s => s.trim()) : [])
+                    setEditing(l)
+                    setFormData({
+                      user_id: l.user_id ?? "",
+                      full_name: l.full_name ?? "",
+                      gender: l.gender ?? "Nam",
+                      degrees: degArr,
+                      organization_unit_id: l.organization_unit_id ? String(l.organization_unit_id) : "",
+                      email: l.email ?? "",
+                      phone: l.phone ?? "",
+                      address: l.address ?? "",
+                      active: l.active ?? "Đang làm việc",
+                    })
+                    setShowModal(true)
+                  }}
                   className="text-blue-600 hover:text-blue-900"
                 >
                   <Edit className="w-4 h-4" />
@@ -148,7 +174,7 @@ const LecturerManagement = () => {
               <input
                 type="text"
                 className="input-field"
-                placeholder="MA ging viAn"
+                placeholder="Mã giảng viên"
                 value={formData.user_id ?? ""}
                 onChange={e => setFormData({ ...formData, user_id: e.target.value })}
                 required
@@ -156,7 +182,7 @@ const LecturerManagement = () => {
               <input
                 type="text"
                 className="input-field"
-                placeholder="H? tAn"
+                placeholder="Họ tên"
                 value={formData.full_name ?? ""}
                 onChange={e => setFormData({ ...formData, full_name: e.target.value })}
                 required
@@ -169,29 +195,72 @@ const LecturerManagement = () => {
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
               </select>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="H?c v<"
-                value={formData.degree ?? ""}
-                onChange={e => setFormData({ ...formData, degree: e.target.value })}
-              />
-              <input
-                type="text"
-                className="input-field"
-                placeholder="Chcc v"
-                value={formData.position ?? ""}
-                onChange={e => setFormData({ ...formData, position: e.target.value })}
-              />
+              <div>
+                <label className="block mb-1">Học vị</label>
+                <div className="flex flex-wrap gap-3">
+                  {DEGREE_OPTIONS.map(opt => (
+                    <label key={opt} className="inline-flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        className="form-checkbox"
+                        checked={formData.degrees?.includes(opt)}
+                        onChange={(e) => {
+                          setFormData(prev => {
+                            const set = new Set(prev.degrees || [])
+                            if (e.target.checked) {
+                              set.add(opt)
+                            } else {
+                              set.delete(opt)
+                            }
+                            return { ...prev, degrees: Array.from(set) }
+                          })
+                        }}
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <select
                 value={formData.organization_unit_id ?? ""}
                 onChange={e => setFormData({ ...formData, organization_unit_id: e.target.value })}
                 className="input-field"
+                required
               >
                 <option value="">Chọn đơn vị</option>
                 {departments.map(d => (
                   <option key={d.id} value={d.id}>{d.department_name}</option>
                 ))}
+              </select>
+              <input
+                type="email"
+                className="input-field"
+                placeholder="Email"
+                value={formData.email ?? ""}
+                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                required
+              />
+              <input
+                type="tel"
+                className="input-field"
+                placeholder="Số điện thoại"
+                value={formData.phone ?? ""}
+                onChange={e => setFormData({ ...formData, phone: e.target.value })}
+              />
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Địa chỉ"
+                value={formData.address ?? ""}
+                onChange={e => setFormData({ ...formData, address: e.target.value })}
+              />
+              <select
+                value={formData.active ?? "Đang làm việc"}
+                onChange={e => setFormData({ ...formData, active: e.target.value })}
+                className="input-field"
+              >
+                <option value="Đang làm việc">Đang làm việc</option>
+                <option value="Nghỉ việc">Nghỉ việc</option>
               </select>
               <div className="flex justify-end space-x-3 pt-3">
                 <button onClick={() => setShowModal(false)} type="button" className="btn-secondary">Hủy</button>

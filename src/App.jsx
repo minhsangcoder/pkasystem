@@ -14,7 +14,6 @@ import MajorManagement from '@/pages/MajorManagement'
 import KnowledgeBlockManagement from '@/pages/KnowledgeBlockManagement'
 import CurriculumStructureManagement from '@/pages/CurriculumStructureManagement'
 import ProgramManagement from '@/pages/ProgramManagement'
-import CurriculumViewer from '@/pages/CurriculumViewer'
 import TuitionCalculator from '@/pages/TuitionCalculator';
 
 // Quản lý nhân sự
@@ -39,7 +38,6 @@ function App() {
             <Route path="curriculum-structure" element={<CurriculumStructureManagement />} />
             <Route path="programs" element={<ProgramManagement />} />
             <Route path="departments" element={<DepartmentManagement />} />
-            <Route path="curriculum-viewer" element={<CurriculumViewer />} />
             <Route path="tuition-calculator" element={<TuitionCalculator />} />
 
             {/* Quản lý nhân sự */}
