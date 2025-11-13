@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { programAPI, knowledgeBlockAPI, courseAPI } from '@/services/api'
+import { programAPI, knowledgeBlockAPI, courseAPI, majorAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
 function ProgramManagement() {
@@ -7,6 +7,7 @@ function ProgramManagement() {
   const [loading, setLoading] = useState(false)
   const [knowledgeBlocks, setKnowledgeBlocks] = useState([])
   const [courses, setCourses] = useState([])
+  const [majors, setMajors] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
   const [courseSearch, setCourseSearch] = useState('')
@@ -17,6 +18,7 @@ function ProgramManagement() {
     start_date: '',
     end_date: '',
     is_active: true,
+    major_id: '',
     knowledge_block_ids: [],
     course_ids: [],
     total_credits: ''
@@ -33,12 +35,19 @@ function ProgramManagement() {
     try {
       setLoading(true)
       const res = await programAPI.getAll()
-      const normalized = (res.data || []).map(item => ({
-        ...item,
-        KnowledgeBlocks: Array.isArray(item.KnowledgeBlocks) ? item.KnowledgeBlocks : [],
-        Courses: Array.isArray(item.Courses) ? item.Courses : [],
-        total_credits: parseCreditsValue(item.total_credits)
-      }))
+      const normalized = (res.data || []).map(item => {
+        // Debug: Log Major data
+        if (item.major_id && !item.Major) {
+          console.warn(`[ProgramManagement] Program ${item.program_code} has major_id=${item.major_id} but no Major object`, item);
+        }
+        return {
+          ...item,
+          KnowledgeBlocks: Array.isArray(item.KnowledgeBlocks) ? item.KnowledgeBlocks : [],
+          Courses: Array.isArray(item.Courses) ? item.Courses : [],
+          Major: item.Major || null, // Ensure Major is preserved (can be null if not set or not found)
+          total_credits: parseCreditsValue(item.total_credits)
+        }
+      })
       setPrograms(normalized)
     } catch (e) {
       toast.error(e.message)
@@ -65,10 +74,20 @@ function ProgramManagement() {
     }
   }
 
+  const fetchMajors = async () => {
+    try {
+      const res = await majorAPI.getAll()
+      setMajors(res.data || [])
+    } catch (e) {
+      toast.error('Không thể tải danh sách ngành học')
+    }
+  }
+
   useEffect(() => {
     fetchPrograms()
     fetchKnowledgeBlocks()
     fetchCourses()
+    fetchMajors()
   }, [])
 
   const openCreateModal = () => {
@@ -81,6 +100,7 @@ function ProgramManagement() {
       start_date: '',
       end_date: '',
       is_active: true,
+      major_id: '',
       knowledge_block_ids: [],
       course_ids: [],
       total_credits: ''
@@ -91,6 +111,16 @@ function ProgramManagement() {
   const openEditModal = (p) => {
     setModalType('edit')
     setCourseSearch('')
+    // Get major_id from either direct field or Major association
+    const majorId = p.major_id || (p.Major && p.Major.id) || null
+    // Debug logging
+    console.log('[openEditModal] Program data:', {
+      id: p.id,
+      program_code: p.program_code,
+      major_id: p.major_id,
+      Major: p.Major,
+      resolvedMajorId: majorId
+    })
     setModalForm({
       id: p.id,
       knowledge_block_ids: Array.isArray(p.KnowledgeBlocks) ? p.KnowledgeBlocks.map(kb => kb.id) : [],
@@ -101,6 +131,7 @@ function ProgramManagement() {
       end_date: p.end_date || '',
       description: p.description || '',
       is_active: p.is_active !== undefined ? p.is_active : true,
+      major_id: majorId ? String(majorId) : '',
       total_credits: (() => {
         const parsed = parseCreditsValue(p.total_credits)
         return parsed === null ? '' : parsed
@@ -171,6 +202,7 @@ function ProgramManagement() {
         start_date: modalForm.start_date || '',
         end_date: modalForm.end_date || '',
         is_active: Boolean(modalForm.is_active),
+        major_id: modalForm.major_id ? Number(modalForm.major_id) : null,
         knowledge_block_ids: Array.isArray(modalForm.knowledge_block_ids)
           ? modalForm.knowledge_block_ids.slice()
           : [],
@@ -270,6 +302,22 @@ function ProgramManagement() {
                   onChange={handleModalChange}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
                 ></textarea>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Thuộc ngành</label>
+                <select
+                  name="major_id"
+                  value={modalForm.major_id}
+                  onChange={handleModalChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
+                  <option value="">-- Chọn ngành học --</option>
+                  {majors.map(major => (
+                    <option key={major.id} value={major.id}>
+                      {major.major_code} - {major.major_name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -437,6 +485,7 @@ function ProgramManagement() {
                 <tr className="text-left">
                   <th className="p-2">Mã</th>
                   <th className="p-2">Tên chương trình đào tạo</th>
+                  <th className="p-2">Ngành học</th>
                   <th className="p-2">Tổng tín chỉ</th>
                   <th className="p-2">Ngày bắt đầu</th>
                   <th className="p-2">Ngày kết thúc</th>
@@ -451,6 +500,19 @@ function ProgramManagement() {
                   <tr key={p.id} className="border-t">
                     <td className="p-2">{p.program_code}</td>
                     <td className="p-2">{p.program_name}</td>
+                    <td className="p-2">
+                      {p.Major ? (
+                        <span className="text-gray-800" title={`ID: ${p.Major.id}`}>
+                          {p.Major.major_code} - {p.Major.major_name}
+                        </span>
+                      ) : p.major_id ? (
+                        <span className="text-orange-600" title={`major_id=${p.major_id} nhưng không tìm thấy thông tin ngành học. Có thể ngành học đã bị xóa.`}>
+                          ID: {p.major_id} (Không tìm thấy)
+                        </span>
+                      ) : (
+                        <span className="text-gray-400" title="Chưa gán ngành học">-</span>
+                      )}
+                    </td>
                     <td className="p-2">{p.total_credits ?? '-'}</td>
                     <td className="p-2">{p.start_date || '-'}</td>
                     <td className="p-2">{p.end_date || '-'}</td>

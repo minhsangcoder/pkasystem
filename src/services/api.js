@@ -448,6 +448,9 @@ export const programAPI = {
             )
           ]
         : []
+      const normalizedMajorId = data.major_id === undefined || data.major_id === null || data.major_id === ''
+        ? null
+        : Number(data.major_id)
       const response = await api.post('/programs', {
         program_code: data.program_code,
         program_name: data.program_name,
@@ -455,6 +458,7 @@ export const programAPI = {
         start_date: data.start_date || null,
         end_date: data.end_date || null,
         is_active: data.is_active ?? true,
+        major_id: normalizedMajorId,
         total_credits: normalizedCredits,
         knowledge_block_ids: normalizedKnowledgeBlocks,
         course_ids: normalizedCourseIds
@@ -494,6 +498,9 @@ export const programAPI = {
             )
           ]
         : undefined
+      const normalizedMajorId = data.major_id === undefined || data.major_id === null || data.major_id === ''
+        ? null
+        : Number(data.major_id)
       const response = await api.put(`/programs/${id}`, {
         program_code: data.program_code,
         program_name: data.program_name,
@@ -501,6 +508,7 @@ export const programAPI = {
         start_date: data.start_date ?? null,
         end_date: data.end_date ?? null,
         is_active: data.is_active ?? true,
+        major_id: normalizedMajorId,
         total_credits: normalizedCredits,
         knowledge_block_ids: normalizedKnowledgeBlocks,
         course_ids: normalizedCourseIds
@@ -584,6 +592,30 @@ export const majorAPI = {
       }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Không thể xóa ngành học')
+    }
+  },
+
+  getTuition: async (id) => {
+    try {
+      const response = await api.get(`/majors/${id}/tuition`)
+      return {
+        success: true,
+        data: response.data
+      }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể tính học phí tối thiểu của ngành')
+    }
+  },
+
+  getTuitionByYears: async (id) => {
+    try {
+      const response = await api.get(`/majors/${id}/tuition-by-years`)
+      return {
+        success: true,
+        data: response.data
+      }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể tính học phí tối thiểu của ngành theo năm')
     }
   }
 }

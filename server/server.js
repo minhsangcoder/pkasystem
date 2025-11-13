@@ -233,6 +233,29 @@ async function applyDatabasePatches() {
       });
       console.log("✅ [DB] Added 'total_credits' column to programs");
     }
+    if (programColumns && !programColumns.price_per_credit) {
+      console.log("[DB] Adding 'price_per_credit' column to programs...");
+      await qi.addColumn("programs", "price_per_credit", {
+        type: DataTypes.DECIMAL(12, 2),
+        allowNull: true,
+        defaultValue: null,
+      });
+      console.log("✅ [DB] Added 'price_per_credit' column to programs");
+    }
+    if (programColumns && !programColumns.major_id) {
+      console.log("[DB] Adding 'major_id' column to programs...");
+      await qi.addColumn("programs", "major_id", {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: "majors",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "SET NULL",
+      });
+      console.log("✅ [DB] Added 'major_id' column to programs");
+    }
   } catch (err) {
     console.warn("⚠️ [DB] Could not inspect/add columns to programs:", err.message);
   }
@@ -815,6 +838,24 @@ const Program = sequelize.define("Program", {
       min: 0
     }
   },
+  price_per_credit: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
+    defaultValue: null,
+    validate: {
+      min: 0
+    }
+  },
+  major_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: "majors",
+      key: "id"
+    },
+    onUpdate: "CASCADE",
+    onDelete: "SET NULL"
+  },
   start_date: {
     type: DataTypes.DATEONLY,
     allowNull: true
@@ -929,6 +970,10 @@ Major.belongsTo(Employee, { foreignKey: 'head_of_major_id', as: 'HeadOfMajor' })
 // Major – KnowledgeBlock
 Major.hasMany(KnowledgeBlock, { foreignKey: 'major_id', as: 'KnowledgeBlocks' });
 KnowledgeBlock.belongsTo(Major, { foreignKey: 'major_id', as: 'Major' });
+
+// Major – Program
+Major.hasMany(Program, { foreignKey: 'major_id', as: 'Programs' });
+Program.belongsTo(Major, { foreignKey: 'major_id', as: 'Major' });
 
 // KnowledgeBlock – Course
 KnowledgeBlock.hasMany(Course, { foreignKey: 'knowledge_block_id', as: 'Courses' });
@@ -2080,6 +2125,7 @@ app.delete("/api/majors/:id", async (req, res) => {
 app.get("/api/programs", async (req, res) => {
   try {
     const programs = await Program.findAll({
+      // Don't specify attributes to include all fields including major_id
       include: [
         {
           model: KnowledgeBlock,
@@ -2092,13 +2138,30 @@ app.get("/api/programs", async (req, res) => {
           attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
           through: { attributes: ["id", "semester", "notes"] },
         },
+        {
+          model: Major,
+          as: "Major",
+          attributes: ["id", "major_code", "major_name"],
+          required: false
+        },
       ],
       order: [["created_at", "DESC"]],
     });
     // Ensure total_credits is not undefined in response (normalize to null if missing)
+    // Ensure major_id is always present in response (from Major association or direct field)
     const normalized = programs.map(p => {
       const json = p.toJSON();
       if (typeof json.total_credits === 'undefined') json.total_credits = null;
+      // Ensure major_id is present: use from Major association if available, otherwise from direct field
+      if (!json.major_id && json.Major && json.Major.id) {
+        json.major_id = json.Major.id;
+      }
+      // Debug: Log Major data if present
+      if (json.Major) {
+        console.log(`[DEBUG] Program ${json.program_code} has Major:`, json.Major);
+      } else if (json.major_id) {
+        console.log(`[DEBUG] Program ${json.program_code} has major_id=${json.major_id} but no Major object`);
+      }
       return json;
     });
     res.json(normalized);
@@ -2110,6 +2173,7 @@ app.get("/api/programs", async (req, res) => {
 app.get("/api/programs/:id", async (req, res) => {
   try {
     const program = await Program.findByPk(req.params.id, {
+      // Don't specify attributes to include all fields including major_id
       include: [
         {
           model: KnowledgeBlock,
@@ -2122,6 +2186,12 @@ app.get("/api/programs/:id", async (req, res) => {
           attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
           through: { attributes: ["id", "semester", "notes"] },
         },
+        {
+          model: Major,
+          as: "Major",
+          attributes: ["id", "major_code", "major_name"],
+          required: false
+        },
       ],
     });
     if (!program) {
@@ -2129,6 +2199,10 @@ app.get("/api/programs/:id", async (req, res) => {
     }
     const json = program.toJSON();
     if (typeof json.total_credits === 'undefined') json.total_credits = null;
+    // Ensure major_id is present: use from Major association if available, otherwise from direct field
+    if (!json.major_id && json.Major && json.Major.id) {
+      json.major_id = json.Major.id;
+    }
     res.json(json);
   } catch (error) {
     handleError(res, error, "Không thể tải thông tin chương trình");
@@ -2144,6 +2218,7 @@ app.post("/api/programs", async (req, res) => {
       start_date,
       end_date,
       is_active = true,
+      major_id,
       knowledge_block_ids,
       course_ids,
       total_credits
@@ -2165,6 +2240,8 @@ app.post("/api/programs", async (req, res) => {
       return res.status(400).json({ error: "Số tín chỉ phải là số nguyên không âm" });
     }
 
+    const normalizedMajorId = major_id === undefined || major_id === null || major_id === '' ? null : Number(major_id);
+
     let program = await Program.create({
       program_code,
       program_name,
@@ -2172,6 +2249,7 @@ app.post("/api/programs", async (req, res) => {
       start_date: start_date === '' ? null : start_date,
       end_date: end_date === '' ? null : end_date,
       is_active,
+      major_id: normalizedMajorId,
       total_credits: normalizedTotalCredits
     });
 
@@ -2197,6 +2275,7 @@ app.post("/api/programs", async (req, res) => {
     }
 
     program = await Program.findByPk(program.id, {
+      // Don't specify attributes to include all fields including major_id
       include: [
         {
           model: KnowledgeBlock,
@@ -2209,10 +2288,22 @@ app.post("/api/programs", async (req, res) => {
           attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
           through: { attributes: ["id", "semester", "notes"] },
         },
+        {
+          model: Major,
+          as: "Major",
+          attributes: ["id", "major_code", "major_name"],
+          required: false
+        },
       ],
     });
 
-    res.status(201).json(program);
+    const json = program.toJSON();
+    if (typeof json.total_credits === 'undefined') json.total_credits = null;
+    // Ensure major_id is present: use from Major association if available, otherwise from direct field
+    if (!json.major_id && json.Major && json.Major.id) {
+      json.major_id = json.Major.id;
+    }
+    res.status(201).json(json);
   } catch (error) {
     handleError(res, error, "Không thể thêm chương trình");
   }
@@ -2243,6 +2334,38 @@ app.put("/api/programs/:id", async (req, res) => {
       }
 
       updateData.total_credits = normalizedTotalCredits;
+    }
+
+    if ("price_per_credit" in req.body) {
+      const normalizedPrice =
+        req.body.price_per_credit === undefined || req.body.price_per_credit === null || req.body.price_per_credit === ''
+          ? null
+          : Number(req.body.price_per_credit);
+
+      if (
+        normalizedPrice !== null &&
+        (!Number.isFinite(normalizedPrice) || normalizedPrice < 0)
+      ) {
+        return res.status(400).json({ error: "Giá tín chỉ phải là số dương" });
+      }
+
+      updateData.price_per_credit = normalizedPrice;
+    }
+
+    if ("major_id" in req.body) {
+      const normalizedMajorId =
+        req.body.major_id === undefined || req.body.major_id === null || req.body.major_id === ''
+          ? null
+          : Number(req.body.major_id);
+
+      if (
+        normalizedMajorId !== null &&
+        (!Number.isInteger(normalizedMajorId) || normalizedMajorId <= 0)
+      ) {
+        return res.status(400).json({ error: "ID ngành học không hợp lệ" });
+      }
+
+      updateData.major_id = normalizedMajorId;
     }
 
     if (updateData.description === '') updateData.description = null;
@@ -2276,6 +2399,7 @@ app.put("/api/programs/:id", async (req, res) => {
     }
 
     await program.reload({
+      // Don't specify attributes to include all fields including major_id
       include: [
         {
           model: KnowledgeBlock,
@@ -2288,10 +2412,22 @@ app.put("/api/programs/:id", async (req, res) => {
           attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
           through: { attributes: ["id", "semester", "notes"] },
         },
+        {
+          model: Major,
+          as: "Major",
+          attributes: ["id", "major_code", "major_name"],
+          required: false
+        },
       ],
     });
 
-    res.json(program);
+    const json = program.toJSON();
+    if (typeof json.total_credits === 'undefined') json.total_credits = null;
+    // Ensure major_id is present: use from Major association if available, otherwise from direct field
+    if (!json.major_id && json.Major && json.Major.id) {
+      json.major_id = json.Major.id;
+    }
+    res.json(json);
   } catch (error) {
     handleError(res, error, "Không thể cập nhật chương trình");
   }
@@ -2612,69 +2748,35 @@ app.get("/api/tuition/:id", async (req, res) => {
     const programId = req.params.id;
     const priceParam = req.query.price_per_credit ?? req.query.pricePerCredit;
 
-    if (priceParam === undefined || priceParam === null || priceParam === '') {
-      return res.status(400).json({ error: "Vui lòng cung cấp giá tín chỉ (price_per_credit)" });
-    }
-
-    const pricePerCredit = Number(priceParam);
-    if (!Number.isFinite(pricePerCredit) || pricePerCredit <= 0) {
-      return res.status(400).json({ error: "Giá tín chỉ phải là số dương" });
-    }
-    
-    // Lấy chương trình với knowledge blocks và courses
-    const program = await Program.findByPk(programId, {
-      include: [
-        {
-          model: KnowledgeBlock,
-          through: { attributes: [] }, // hide join table
-          attributes: ["id", "block_code", "block_name", "total_credits"],
-          include: [
-            {
-              model: Course,
-              as: "Courses",
-              attributes: ["id", "course_code", "course_name", "total_credits"],
-              where: { is_active: true },
-              required: false
-            }
-          ]
-        }
-      ]
-    });
+    // Lấy chương trình
+    const program = await Program.findByPk(programId);
 
     if (!program) {
       return res.status(404).json({ error: "Không tìm thấy chương trình đào tạo" });
     }
 
-    // Tính học phí
-    let tongHocPhi = 0;
-    const chiTiet = [];
-
-    const programData = program.toJSON();
-    
-    if (programData.KnowledgeBlocks) {
-      programData.KnowledgeBlocks.forEach(block => {
-        if (block.Courses && block.Courses.length > 0) {
-          block.Courses.forEach(course => {
-            const credits = Number(course.total_credits) || 0;
-            const hocPhi = credits * pricePerCredit;
-
-            tongHocPhi += hocPhi;
-
-            chiTiet.push({
-              id: course.id,
-              ten_hoc_phan: course.course_name,
-              ma_hoc_phan: course.course_code,
-              so_tin_chi: credits,
-              gia_tin_chi: pricePerCredit,
-              hoc_phi: hocPhi,
-              khoi_kien_thuc: block.block_name
-            });
-          });
-        }
-      });
+    // Ưu tiên sử dụng price_per_credit từ program, nếu không có thì dùng từ query param
+    let pricePerCredit = null;
+    if (program.price_per_credit && Number(program.price_per_credit) > 0) {
+      pricePerCredit = Number(program.price_per_credit);
+    } else if (priceParam !== undefined && priceParam !== null && priceParam !== '') {
+      pricePerCredit = Number(priceParam);
+      if (!Number.isFinite(pricePerCredit) || pricePerCredit <= 0) {
+        return res.status(400).json({ error: "Giá tín chỉ phải là số dương" });
+      }
+    } else {
+      return res.status(400).json({ error: "Chương trình đào tạo chưa có giá tín chỉ. Vui lòng cung cấp giá tín chỉ hoặc cập nhật giá tín chỉ cho chương trình." });
     }
 
-    const tongSoTinChi = chiTiet.reduce((sum, item) => sum + item.so_tin_chi, 0);
+    // Lấy tổng tín chỉ từ chương trình (được nhập khi tạo/sửa)
+    const tongSoTinChi = Number(program.total_credits) || 0;
+    
+    if (tongSoTinChi <= 0) {
+      return res.status(400).json({ error: "Chương trình đào tạo chưa có tổng số tín chỉ. Vui lòng cập nhật tổng số tín chỉ cho chương trình." });
+    }
+
+    // Tính tổng học phí = tổng tín chỉ × giá tín chỉ
+    const tongHocPhi = tongSoTinChi * pricePerCredit;
 
     res.json({
       program_id: program.id,
@@ -2682,11 +2784,207 @@ app.get("/api/tuition/:id", async (req, res) => {
       program_name: program.program_name,
       price_per_credit: pricePerCredit,
       tongHocPhi,
-      tongSoTinChi,
-      chiTiet
+      tongSoTinChi
     });
   } catch (error) {
     handleError(res, error, "Không thể tính học phí");
+  }
+});
+
+// API để cập nhật giá tín chỉ cho chương trình
+app.put("/api/programs/:id/price", async (req, res) => {
+  try {
+    const program = await Program.findByPk(req.params.id);
+    if (!program) {
+      return res.status(404).json({ error: "Không tìm thấy chương trình" });
+    }
+
+    const { price_per_credit } = req.body;
+    if (price_per_credit === undefined || price_per_credit === null || price_per_credit === '') {
+      return res.status(400).json({ error: "Vui lòng cung cấp giá tín chỉ" });
+    }
+
+    const normalizedPrice = Number(price_per_credit);
+    if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0) {
+      return res.status(400).json({ error: "Giá tín chỉ phải là số dương" });
+    }
+
+    await program.update({ price_per_credit: normalizedPrice });
+    res.json(program);
+  } catch (error) {
+    handleError(res, error, "Không thể cập nhật giá tín chỉ");
+  }
+});
+
+// API để tính học phí tối thiểu của một ngành trong một năm học
+app.get("/api/majors/:id/tuition", async (req, res) => {
+  try {
+    const majorId = req.params.id;
+    
+    const major = await Major.findByPk(majorId, {
+      include: [
+        {
+          model: Program,
+          as: "Programs",
+          where: { is_active: true },
+          required: false
+        }
+      ]
+    });
+
+    if (!major) {
+      return res.status(404).json({ error: "Không tìm thấy ngành học" });
+    }
+
+    const programs = major.Programs || [];
+    
+    if (programs.length === 0) {
+      return res.json({
+        major_id: major.id,
+        major_code: major.major_code,
+        major_name: major.major_name,
+        total_programs: 0,
+        tongHocPhiToiThieu: 0,
+        tongSoTinChi: 0,
+        programs: []
+      });
+    }
+
+    let tongHocPhiToiThieu = 0;
+    let tongSoTinChi = 0;
+    const programDetails = [];
+
+    programs.forEach(program => {
+      const totalCredits = Number(program.total_credits) || 0;
+      const pricePerCredit = Number(program.price_per_credit) || 0;
+      
+      if (totalCredits > 0 && pricePerCredit > 0) {
+        const hocPhi = totalCredits * pricePerCredit;
+        tongHocPhiToiThieu += hocPhi;
+        tongSoTinChi += totalCredits;
+        
+        programDetails.push({
+          program_id: program.id,
+          program_code: program.program_code,
+          program_name: program.program_name,
+          total_credits: totalCredits,
+          price_per_credit: pricePerCredit,
+          hoc_phi: hocPhi
+        });
+      }
+    });
+
+    res.json({
+      major_id: major.id,
+      major_code: major.major_code,
+      major_name: major.major_name,
+      total_programs: programs.length,
+      tongHocPhiToiThieu,
+      tongSoTinChi,
+      programs: programDetails
+    });
+  } catch (error) {
+    handleError(res, error, "Không thể tính học phí tối thiểu của ngành");
+  }
+});
+
+// API để tính học phí tối thiểu của một ngành trong 5 năm gần đây
+app.get("/api/majors/:id/tuition-by-years", async (req, res) => {
+  try {
+    const majorId = req.params.id;
+    const currentYear = new Date().getFullYear();
+    const years = [currentYear - 4, currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+    
+    const major = await Major.findByPk(majorId, {
+      include: [
+        {
+          model: Program,
+          as: "Programs",
+          where: { is_active: true },
+          required: false
+        }
+      ]
+    });
+
+    if (!major) {
+      return res.status(404).json({ error: "Không tìm thấy ngành học" });
+    }
+
+    const programs = major.Programs || [];
+    
+    // Nhóm chương trình theo năm (dựa vào start_date hoặc end_date)
+    const programsByYear = {};
+    years.forEach(year => {
+      programsByYear[year] = [];
+    });
+
+    programs.forEach(program => {
+      let programYear = null;
+      
+      // Ưu tiên dùng start_date, nếu không có thì dùng end_date
+      if (program.start_date) {
+        const startDate = new Date(program.start_date);
+        programYear = startDate.getFullYear();
+      } else if (program.end_date) {
+        const endDate = new Date(program.end_date);
+        programYear = endDate.getFullYear();
+      }
+      
+      // Nếu không có ngày, có thể gán vào năm hiện tại hoặc bỏ qua
+      if (programYear && years.includes(programYear)) {
+        if (!programsByYear[programYear]) {
+          programsByYear[programYear] = [];
+        }
+        programsByYear[programYear].push(program);
+      }
+    });
+
+    // Tính học phí cho từng năm
+    const tuitionByYears = years.map(year => {
+      const yearPrograms = programsByYear[year] || [];
+      let tongHocPhiToiThieu = 0;
+      let tongSoTinChi = 0;
+      const programDetails = [];
+
+      yearPrograms.forEach(program => {
+        const totalCredits = Number(program.total_credits) || 0;
+        const pricePerCredit = Number(program.price_per_credit) || 0;
+        
+        if (totalCredits > 0 && pricePerCredit > 0) {
+          const hocPhi = totalCredits * pricePerCredit;
+          tongHocPhiToiThieu += hocPhi;
+          tongSoTinChi += totalCredits;
+          
+          programDetails.push({
+            program_id: program.id,
+            program_code: program.program_code,
+            program_name: program.program_name,
+            total_credits: totalCredits,
+            price_per_credit: pricePerCredit,
+            hoc_phi: hocPhi,
+            start_date: program.start_date,
+            end_date: program.end_date
+          });
+        }
+      });
+
+      return {
+        year,
+        total_programs: yearPrograms.length,
+        tongHocPhiToiThieu,
+        tongSoTinChi,
+        programs: programDetails
+      };
+    });
+
+    res.json({
+      major_id: major.id,
+      major_code: major.major_code,
+      major_name: major.major_name,
+      years: tuitionByYears
+    });
+  } catch (error) {
+    handleError(res, error, "Không thể tính học phí tối thiểu của ngành theo năm");
   }
 });
 
