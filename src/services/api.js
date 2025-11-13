@@ -423,12 +423,41 @@ export const programAPI = {
       if (!data.program_code || !data.program_name) {
         throw new Error('Mã chương trình và tên chương trình là bắt buộc')
       }
+      const normalizedCredits =
+        data.total_credits === undefined || data.total_credits === null || data.total_credits === ''
+          ? null
+          : Number(data.total_credits)
+      if (normalizedCredits !== null && (!Number.isInteger(normalizedCredits) || normalizedCredits < 0)) {
+        throw new Error('Số tín chỉ phải là số nguyên không âm')
+      }
+      const normalizedKnowledgeBlocks = Array.isArray(data.knowledge_block_ids)
+        ? [
+            ...new Set(
+              data.knowledge_block_ids
+                .map(id => Number(id))
+                .filter(id => Number.isInteger(id) && id > 0)
+            )
+          ]
+        : []
+      const normalizedCourseIds = Array.isArray(data.course_ids)
+        ? [
+            ...new Set(
+              data.course_ids
+                .map(id => Number(id))
+                .filter(id => Number.isInteger(id) && id > 0)
+            )
+          ]
+        : []
       const response = await api.post('/programs', {
-        ...data,
+        program_code: data.program_code,
+        program_name: data.program_name,
         description: data.description || null,
         start_date: data.start_date || null,
         end_date: data.end_date || null,
-        is_active: data.is_active ?? true
+        is_active: data.is_active ?? true,
+        total_credits: normalizedCredits,
+        knowledge_block_ids: normalizedKnowledgeBlocks,
+        course_ids: normalizedCourseIds
       })
       return { success: true, data: response.data }
     } catch (error) {
@@ -440,7 +469,42 @@ export const programAPI = {
   },
   update: async (id, data) => {
     try {
-      const response = await api.put(`/programs/${id}`, data)
+      const normalizedCredits =
+        data.total_credits === undefined || data.total_credits === null || data.total_credits === ''
+          ? null
+          : Number(data.total_credits)
+      if (normalizedCredits !== null && (!Number.isInteger(normalizedCredits) || normalizedCredits < 0)) {
+        throw new Error('Số tín chỉ phải là số nguyên không âm')
+      }
+      const normalizedKnowledgeBlocks = Array.isArray(data.knowledge_block_ids)
+        ? [
+            ...new Set(
+              data.knowledge_block_ids
+                .map(id => Number(id))
+                .filter(id => Number.isInteger(id) && id > 0)
+            )
+          ]
+        : undefined
+      const normalizedCourseIds = Array.isArray(data.course_ids)
+        ? [
+            ...new Set(
+              data.course_ids
+                .map(id => Number(id))
+                .filter(id => Number.isInteger(id) && id > 0)
+            )
+          ]
+        : undefined
+      const response = await api.put(`/programs/${id}`, {
+        program_code: data.program_code,
+        program_name: data.program_name,
+        description: data.description ?? null,
+        start_date: data.start_date ?? null,
+        end_date: data.end_date ?? null,
+        is_active: data.is_active ?? true,
+        total_credits: normalizedCredits,
+        knowledge_block_ids: normalizedKnowledgeBlocks,
+        course_ids: normalizedCourseIds
+      })
       return { success: true, data: response.data }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Không thể cập nhật chương trình')

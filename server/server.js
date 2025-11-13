@@ -144,6 +144,43 @@ async function loadSampleData() {
   }
 }
 
+// Recalculate total_credits for a single program based on linked KnowledgeBlocks
+async function recalculateProgramTotalCredits(programInstance) {
+  try {
+    const program = await Program.findByPk(programInstance.id, {
+      include: [
+        {
+          model: KnowledgeBlock,
+          attributes: ["id", "total_credits"],
+          through: { attributes: [] }
+        }
+      ]
+    });
+    if (!program) return;
+    const data = program.toJSON();
+    const sum = Array.isArray(data.KnowledgeBlocks)
+      ? data.KnowledgeBlocks.reduce((acc, kb) => acc + (Number(kb.total_credits) || 0), 0)
+      : 0;
+    await program.update({ total_credits: sum });
+  } catch (e) {
+    console.warn("⚠️ [DB] Failed to recalculate program total_credits:", e.message);
+  }
+}
+
+// Recalculate total_credits for all programs (useful for backfilling existing data)
+async function backfillAllProgramsTotalCredits() {
+  try {
+    console.log("[DB] Backfilling total_credits for programs...");
+    const allPrograms = await Program.findAll({ attributes: ["id"] });
+    for (const p of allPrograms) {
+      await recalculateProgramTotalCredits(p);
+    }
+    console.log("✅ [DB] Backfill total_credits completed");
+  } catch (e) {
+    console.warn("⚠️ [DB] Backfill total_credits failed:", e.message);
+  }
+}
+
 async function applyDatabasePatches() {
   const qi = sequelize.getQueryInterface();
   console.log("[DB] Applying database patches...");
@@ -182,6 +219,113 @@ async function applyDatabasePatches() {
     }
   } catch (err) {
     console.warn("⚠️ [DB] Could not inspect/add columns to curriculum_structures:", err.message);
+  }
+
+  // Ensure programs table has total_credits column
+  try {
+    const programColumns = await qi.describeTable("programs");
+    if (programColumns && !programColumns.total_credits) {
+      console.log("[DB] Adding 'total_credits' column to programs...");
+      await qi.addColumn("programs", "total_credits", {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+      });
+      console.log("✅ [DB] Added 'total_credits' column to programs");
+    }
+  } catch (err) {
+    console.warn("⚠️ [DB] Could not inspect/add columns to programs:", err.message);
+  }
+
+  // Ensure program_courses join table exists
+  try {
+    const tables = await qi.showAllTables();
+    const normalizedTables = Array.isArray(tables)
+      ? tables
+          .map((t) => {
+            if (typeof t === "string") return t.toLowerCase();
+            if (t && typeof t === "object") {
+              if (typeof t.tableName === "string") return t.tableName.toLowerCase();
+              if (typeof t.name === "string") return t.name.toLowerCase();
+            }
+            return "";
+          })
+          .filter(Boolean)
+      : [];
+    if (!normalizedTables.includes("program_courses")) {
+      console.log("[DB] Creating 'program_courses' join table...");
+      await qi.createTable("program_courses", {
+        id: {
+          type: DataTypes.INTEGER,
+          primaryKey: true,
+          autoIncrement: true,
+        },
+        program_id: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          references: {
+            model: "programs",
+            key: "id",
+          },
+          onUpdate: "CASCADE",
+          onDelete: "CASCADE",
+        },
+        course_id: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          references: {
+            model: "courses",
+            key: "id",
+          },
+          onUpdate: "CASCADE",
+          onDelete: "CASCADE",
+        },
+        semester: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        notes: {
+          type: DataTypes.TEXT,
+          allowNull: true,
+        },
+        created_at: {
+          type: DataTypes.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+        },
+        updated_at: {
+          type: DataTypes.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+        },
+      });
+      await qi.addConstraint("program_courses", {
+        type: "unique",
+        fields: ["program_id", "course_id"],
+        name: "program_courses_unique_program_course",
+      });
+      console.log("✅ [DB] Created 'program_courses' join table");
+    } else {
+      const programCourseColumns = await qi.describeTable("program_courses");
+      if (programCourseColumns && !programCourseColumns.semester) {
+        console.log("[DB] Adding 'semester' column to program_courses...");
+        await qi.addColumn("program_courses", "semester", {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        });
+        console.log("✅ [DB] Added 'semester' column to program_courses");
+      }
+      if (programCourseColumns && !programCourseColumns.notes) {
+        console.log("[DB] Adding 'notes' column to program_courses...");
+        await qi.addColumn("program_courses", "notes", {
+          type: DataTypes.TEXT,
+          allowNull: true,
+        });
+        console.log("✅ [DB] Added 'notes' column to program_courses");
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [DB] Could not ensure program_courses table:", err.message);
   }
 }
 
@@ -663,6 +807,14 @@ const Program = sequelize.define("Program", {
     type: DataTypes.TEXT,
     allowNull: true
   },
+  total_credits: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: null,
+    validate: {
+      min: 0
+    }
+  },
   start_date: {
     type: DataTypes.DATEONLY,
     allowNull: true
@@ -677,6 +829,46 @@ const Program = sequelize.define("Program", {
   }
 }, {
   tableName: "programs",
+  timestamps: true,
+  underscored: true
+});
+
+const ProgramCourse = sequelize.define("ProgramCourse", {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  program_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: "programs",
+      key: "id"
+    },
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE"
+  },
+  course_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: "courses",
+      key: "id"
+    },
+    onDelete: "CASCADE",
+    onUpdate: "CASCADE"
+  },
+  semester: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  notes: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  }
+}, {
+  tableName: "program_courses",
   timestamps: true,
   underscored: true
 });
@@ -719,6 +911,13 @@ Cohort.belongsTo(Employee, { foreignKey: 'instructor_id', as: 'Instructor' });
 
 Program.belongsToMany(KnowledgeBlock, { through: 'program_knowledge_blocks', foreignKey: 'program_id', otherKey: 'knowledge_block_id' });
 KnowledgeBlock.belongsToMany(Program, { through: 'program_knowledge_blocks', foreignKey: 'knowledge_block_id', otherKey: 'program_id' });
+
+Program.belongsToMany(Course, { through: ProgramCourse, as: 'Courses', foreignKey: 'program_id', otherKey: 'course_id' });
+Course.belongsToMany(Program, { through: ProgramCourse, as: 'Programs', foreignKey: 'course_id', otherKey: 'program_id' });
+Program.hasMany(ProgramCourse, { foreignKey: 'program_id', as: 'ProgramCourses' });
+ProgramCourse.belongsTo(Program, { foreignKey: 'program_id' });
+Course.hasMany(ProgramCourse, { foreignKey: 'course_id', as: 'ProgramCourses' });
+ProgramCourse.belongsTo(Course, { foreignKey: 'course_id' });
 
 // Department – Major – Employee
 Department.hasMany(Major, { foreignKey: 'department_id' });
@@ -774,6 +973,16 @@ const handleError = (res, error, defaultMessage = "Internal server error") => {
   res.status(500).json({
     error: error.message || defaultMessage
   });
+};
+
+const safeCount = async (model, options = {}) => {
+  try {
+    return await model.count(options);
+  } catch (error) {
+    const modelName = model?.name || "UnknownModel";
+    console.warn(`⚠️ [DB] Count failed for ${modelName}:`, error.message);
+    return 0;
+  }
 };
 
 // =======================
@@ -1874,12 +2083,25 @@ app.get("/api/programs", async (req, res) => {
       include: [
         {
           model: KnowledgeBlock,
+          through: { attributes: [] },
           attributes: ["id", "block_code", "block_name", "total_credits", "is_required", "is_active"],
+        },
+        {
+          model: Course,
+          as: "Courses",
+          attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
+          through: { attributes: ["id", "semester", "notes"] },
         },
       ],
       order: [["created_at", "DESC"]],
     });
-    res.json(programs);
+    // Ensure total_credits is not undefined in response (normalize to null if missing)
+    const normalized = programs.map(p => {
+      const json = p.toJSON();
+      if (typeof json.total_credits === 'undefined') json.total_credits = null;
+      return json;
+    });
+    res.json(normalized);
   } catch (error) {
     handleError(res, error, "Không thể tải danh sách chương trình");
   }
@@ -1891,14 +2113,23 @@ app.get("/api/programs/:id", async (req, res) => {
       include: [
         {
           model: KnowledgeBlock,
+          through: { attributes: [] },
           attributes: ["id", "block_code", "block_name", "total_credits", "is_required", "is_active"],
+        },
+        {
+          model: Course,
+          as: "Courses",
+          attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
+          through: { attributes: ["id", "semester", "notes"] },
         },
       ],
     });
     if (!program) {
       return res.status(404).json({ error: "Không tìm thấy chương trình" });
     }
-    res.json(program);
+    const json = program.toJSON();
+    if (typeof json.total_credits === 'undefined') json.total_credits = null;
+    res.json(json);
   } catch (error) {
     handleError(res, error, "Không thể tải thông tin chương trình");
   }
@@ -1906,25 +2137,80 @@ app.get("/api/programs/:id", async (req, res) => {
 
 app.post("/api/programs", async (req, res) => {
   try {
-    const { program_code, program_name, description, start_date, end_date, is_active = true, knowledge_block_ids } = req.body;
+    const {
+      program_code,
+      program_name,
+      description,
+      start_date,
+      end_date,
+      is_active = true,
+      knowledge_block_ids,
+      course_ids,
+      total_credits
+    } = req.body;
 
     if (!program_code || !program_name) {
       return res.status(400).json({ error: "Mã chương trình và tên chương trình là bắt buộc" });
     }
 
-    const program = await Program.create({
+    const normalizedTotalCredits =
+      total_credits === undefined || total_credits === null || total_credits === ''
+        ? null
+        : Number(total_credits);
+
+    if (
+      normalizedTotalCredits !== null &&
+      (!Number.isInteger(normalizedTotalCredits) || normalizedTotalCredits < 0)
+    ) {
+      return res.status(400).json({ error: "Số tín chỉ phải là số nguyên không âm" });
+    }
+
+    let program = await Program.create({
       program_code,
       program_name,
       description: description === '' ? null : description,
       start_date: start_date === '' ? null : start_date,
       end_date: end_date === '' ? null : end_date,
-      is_active
+      is_active,
+      total_credits: normalizedTotalCredits
     });
 
     // Link knowledge blocks if provided
     if (Array.isArray(knowledge_block_ids) && knowledge_block_ids.length > 0) {
       await program.setKnowledgeBlocks(knowledge_block_ids);
     }
+
+    if (Array.isArray(course_ids)) {
+      const normalizedCourseIds = [
+        ...new Set(
+          course_ids
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+        ),
+      ];
+      await program.setCourses(normalizedCourseIds);
+    }
+
+    // If total_credits not provided, auto-calc from knowledge blocks
+    if (normalizedTotalCredits === null) {
+      await recalculateProgramTotalCredits(program);
+    }
+
+    program = await Program.findByPk(program.id, {
+      include: [
+        {
+          model: KnowledgeBlock,
+          through: { attributes: [] },
+          attributes: ["id", "block_code", "block_name", "total_credits", "is_required", "is_active"],
+        },
+        {
+          model: Course,
+          as: "Courses",
+          attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
+          through: { attributes: ["id", "semester", "notes"] },
+        },
+      ],
+    });
 
     res.status(201).json(program);
   } catch (error) {
@@ -1940,6 +2226,25 @@ app.put("/api/programs/:id", async (req, res) => {
     }
 
     const updateData = { ...req.body };
+    delete updateData.knowledge_block_ids;
+    delete updateData.course_ids;
+
+    if ("total_credits" in req.body) {
+      const normalizedTotalCredits =
+        req.body.total_credits === undefined || req.body.total_credits === null || req.body.total_credits === ''
+          ? null
+          : Number(req.body.total_credits);
+
+      if (
+        normalizedTotalCredits !== null &&
+        (!Number.isInteger(normalizedTotalCredits) || normalizedTotalCredits < 0)
+      ) {
+        return res.status(400).json({ error: "Số tín chỉ phải là số nguyên không âm" });
+      }
+
+      updateData.total_credits = normalizedTotalCredits;
+    }
+
     if (updateData.description === '') updateData.description = null;
     if (updateData.start_date === '') updateData.start_date = null;
     if (updateData.end_date === '') updateData.end_date = null;
@@ -1950,6 +2255,41 @@ app.put("/api/programs/:id", async (req, res) => {
     if (Array.isArray(req.body.knowledge_block_ids)) {
       await program.setKnowledgeBlocks(req.body.knowledge_block_ids);
     }
+
+    if (Array.isArray(req.body.course_ids)) {
+      const normalizedCourseIds = [
+        ...new Set(
+          req.body.course_ids
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+        ),
+      ];
+      await program.setCourses(normalizedCourseIds);
+    }
+
+    // If total_credits was not explicitly provided (or set to null/empty),
+    // recalculate based on current knowledge blocks
+    const provided = Object.prototype.hasOwnProperty.call(req.body, "total_credits");
+    const providedIsNullish = req.body.total_credits === '' || req.body.total_credits === null || req.body.total_credits === undefined;
+    if (!provided || providedIsNullish) {
+      await recalculateProgramTotalCredits(program);
+    }
+
+    await program.reload({
+      include: [
+        {
+          model: KnowledgeBlock,
+          through: { attributes: [] },
+          attributes: ["id", "block_code", "block_name", "total_credits", "is_required", "is_active"],
+        },
+        {
+          model: Course,
+          as: "Courses",
+          attributes: ["id", "course_code", "course_name", "total_credits", "knowledge_block_id", "is_active"],
+          through: { attributes: ["id", "semester", "notes"] },
+        },
+      ],
+    });
 
     res.json(program);
   } catch (error) {
@@ -1967,6 +2307,7 @@ app.delete("/api/programs/:id", async (req, res) => {
     await sequelize.transaction(async (transaction) => {
       // Remove many-to-many relationships
       await program.setKnowledgeBlocks([], { transaction });
+      await program.setCourses([], { transaction });
 
       // Detach curriculum structures referencing this program
       await CurriculumStructure.update(
@@ -1980,16 +2321,6 @@ app.delete("/api/programs/:id", async (req, res) => {
 
       // Detach cohorts referencing this program
       await Cohort.update(
-        { program_id: null },
-        {
-          where: { program_id: program.id },
-          transaction,
-          logging: console.log,
-        }
-      );
-
-      // Clear program from courses
-      await Course.update(
         { program_id: null },
         {
           where: { program_id: program.id },
@@ -2183,17 +2514,17 @@ app.get("/api/dashboard/stats", async (req, res) => {
       totalMajors, totalCohorts, totalKnowledgeBlocks, totalPositions,
       activeEmployees, activeCohorts, completedCohorts
     ] = await Promise.all([
-      Employee.count(),
-      Department.count(),
-      Course.count(),
-      Enrollment.count(),
-      Major.count(),
-      Cohort.count(),
-      KnowledgeBlock.count(),
-      Position.count(),
-      Employee.count({ where: { status: 'Active' } }),
-      Cohort.count({ where: { status: 'active' } }),
-      Cohort.count({ where: { status: 'completed' } })
+      safeCount(Employee),
+      safeCount(Department),
+      safeCount(Course),
+      safeCount(Enrollment),
+      safeCount(Major),
+      safeCount(Cohort),
+      safeCount(KnowledgeBlock),
+      safeCount(Position),
+      safeCount(Employee, { where: { status: 'Active' } }),
+      safeCount(Cohort, { where: { status: 'active' } }),
+      safeCount(Cohort, { where: { status: 'completed' } })
     ]);
 
     res.json({
@@ -2254,6 +2585,7 @@ async function initializeServer() {
     console.log("✅ [DB] Database tables synced successfully");
 
     await loadSampleData();
+    await backfillAllProgramsTotalCredits();
 
     app.listen(PORT, () => {
       const timestamp = new Date().toISOString();
@@ -2278,6 +2610,16 @@ async function initializeServer() {
 app.get("/api/tuition/:id", async (req, res) => {
   try {
     const programId = req.params.id;
+    const priceParam = req.query.price_per_credit ?? req.query.pricePerCredit;
+
+    if (priceParam === undefined || priceParam === null || priceParam === '') {
+      return res.status(400).json({ error: "Vui lòng cung cấp giá tín chỉ (price_per_credit)" });
+    }
+
+    const pricePerCredit = Number(priceParam);
+    if (!Number.isFinite(pricePerCredit) || pricePerCredit <= 0) {
+      return res.status(400).json({ error: "Giá tín chỉ phải là số dương" });
+    }
     
     // Lấy chương trình với knowledge blocks và courses
     const program = await Program.findByPk(programId, {
@@ -2313,12 +2655,11 @@ app.get("/api/tuition/:id", async (req, res) => {
       programData.KnowledgeBlocks.forEach(block => {
         if (block.Courses && block.Courses.length > 0) {
           block.Courses.forEach(course => {
-            const credits = course.total_credits || 0;
-            // const pricePerCredit = parseFloat(course.price_per_credit) || 500000;
+            const credits = Number(course.total_credits) || 0;
             const hocPhi = credits * pricePerCredit;
-            
+
             tongHocPhi += hocPhi;
-            
+
             chiTiet.push({
               id: course.id,
               ten_hoc_phan: course.course_name,
@@ -2333,13 +2674,16 @@ app.get("/api/tuition/:id", async (req, res) => {
       });
     }
 
+    const tongSoTinChi = chiTiet.reduce((sum, item) => sum + item.so_tin_chi, 0);
+
     res.json({
       program_id: program.id,
       program_code: program.program_code,
       program_name: program.program_name,
-      tongHocPhi: tongHocPhi,
-      tongSoTinChi: chiTiet.reduce((sum, item) => sum + item.so_tin_chi, 0),
-      chiTiet: chiTiet
+      price_per_credit: pricePerCredit,
+      tongHocPhi,
+      tongSoTinChi,
+      chiTiet
     });
   } catch (error) {
     handleError(res, error, "Không thể tính học phí");

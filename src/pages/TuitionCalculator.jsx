@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 export default function TuitionCalculator() {
   const [programs, setPrograms] = useState([]);
   const [selectedProgramId, setSelectedProgramId] = useState('');
+  const [pricePerCredit, setPricePerCredit] = useState('');
   const [tuition, setTuition] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,9 +29,22 @@ export default function TuitionCalculator() {
       return;
     }
 
+    if (pricePerCredit === '') {
+      toast.error('Vui lòng nhập giá tín chỉ');
+      return;
+    }
+
+    const numericPrice = Number(pricePerCredit);
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      toast.error('Giá tín chỉ phải là số dương');
+      return;
+    }
+
     try {
       setLoading(true);
-      const response = await api.get(`/tuition/${selectedProgramId}`);
+      const response = await api.get(`/tuition/${selectedProgramId}`, {
+        params: { price_per_credit: numericPrice }
+      });
       setTuition(response.data);
     } catch (error) {
       toast.error(error.response?.data?.error || error.message || 'Không thể tính học phí');
@@ -45,19 +59,35 @@ export default function TuitionCalculator() {
       <div>
         <h2 className="text-2xl font-bold mb-4">Tính học phí chương trình đào tạo</h2>
         
-        <div className="flex gap-4 mb-6">
-          <select
-            value={selectedProgramId}
-            onChange={e => setSelectedProgramId(e.target.value)}
-            className="border rounded-md px-4 py-2 min-w-[300px]"
-          >
-            <option value="">-- Chọn chương trình đào tạo --</option>
-            {programs.map(program => (
-              <option key={program.id} value={program.id}>
-                {program.program_code} - {program.program_name}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-col gap-4 md:flex-row md:items-end mb-6">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-gray-600">Chương trình đào tạo</label>
+            <select
+              value={selectedProgramId}
+              onChange={e => setSelectedProgramId(e.target.value)}
+              className="border rounded-md px-4 py-2 min-w-[280px]"
+            >
+              <option value="">-- Chọn chương trình đào tạo --</option>
+              {programs.map(program => (
+                <option key={program.id} value={program.id}>
+                  {program.program_code} - {program.program_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-gray-600">Giá tín chỉ (VND)</label>
+            <input
+              type="number"
+              min="0"
+              step="1000"
+              value={pricePerCredit}
+              onChange={e => setPricePerCredit(e.target.value)}
+              className="border rounded-md px-4 py-2 min-w-[200px]"
+              placeholder="Nhập giá tín chỉ"
+            />
+          </div>
           
           <button
             onClick={fetchTuition}
@@ -74,7 +104,7 @@ export default function TuitionCalculator() {
               <h3 className="text-xl font-semibold mb-2">
                 {tuition.program_code} - {tuition.program_name}
               </h3>
-              <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <p className="text-sm text-gray-600">Tổng số tín chỉ</p>
                   <p className="text-2xl font-bold text-blue-600">{tuition.tongSoTinChi}</p>
@@ -86,6 +116,15 @@ export default function TuitionCalculator() {
                       style: 'currency',
                       currency: 'VND'
                     }).format(tuition.tongHocPhi)}
+                  </p>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600">Giá tín chỉ áp dụng</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {new Intl.NumberFormat('vi-VN', {
+                      style: 'currency',
+                      currency: 'VND'
+                    }).format(tuition.price_per_credit)}
                   </p>
                 </div>
               </div>
