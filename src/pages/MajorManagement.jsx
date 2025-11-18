@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Search, Filter, GraduationCap, Clock, User, Award, Building } from 'lucide-react'
-import { majorAPI, departmentAPI, employeeAPI } from '@/services/api'
+import { majorAPI, departmentAPI, employeeAPI, facultyAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
 const MajorManagement = () => {
   const [majors, setMajors] = useState([])
   const [departments, setDepartments] = useState([])
+  const [faculties, setFaculties] = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -22,6 +23,7 @@ const MajorManagement = () => {
     duration_years: 4,
     total_credits: 120,
     department_id: '',
+    faculty_id: '',
     head_of_major_id: '',
     is_active: true
   })
@@ -34,15 +36,17 @@ const MajorManagement = () => {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [majorsRes, departmentsRes, employeesRes] = await Promise.all([
+      const [majorsRes, departmentsRes, employeesRes, facultiesRes] = await Promise.all([
         majorAPI.getAll(),
         departmentAPI.getAll(),
-        employeeAPI.getAll()
+        employeeAPI.getAll(),
+        facultyAPI.getAll()
       ])
       
       setMajors(majorsRes.data)
       setDepartments(departmentsRes.data)
       setEmployees(employeesRes.data)
+      setFaculties(facultiesRes.data || [])
     } catch (error) {
       toast.error(error.message)
     } finally {
@@ -54,7 +58,8 @@ const MajorManagement = () => {
     const matchesSearch = 
       major.major_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       major.major_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (major.Department?.department_name && major.Department.department_name.toLowerCase().includes(searchTerm.toLowerCase()))
+      (major.Department?.department_name && major.Department.department_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (major.Faculty?.faculty_name && major.Faculty.faculty_name.toLowerCase().includes(searchTerm.toLowerCase()))
     
     const matchesDegree = degreeFilter === 'all' || major.degree_type === degreeFilter
     const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? major.is_active : !major.is_active)
@@ -90,6 +95,7 @@ const MajorManagement = () => {
       duration_years: major.duration_years,
       total_credits: major.total_credits,
       department_id: major.department_id || '',
+      faculty_id: major.faculty_id || '',
       head_of_major_id: major.head_of_major_id || '',
       is_active: major.is_active
     })
@@ -290,7 +296,7 @@ const MajorManagement = () => {
                 <th className="table-header">Bậc học</th>
                 <th className="table-header">Thời gian</th>
                 <th className="table-header">Tín chỉ</th>
-                <th className="table-header">Khoa/Bộ môn</th>
+                <th className="table-header">Khoa</th>
                 <th className="table-header">Trưởng ngành</th>
                 <th className="table-header">Trạng thái</th>
                 <th className="table-header w-28">Thao tác</th>
@@ -323,7 +329,17 @@ const MajorManagement = () => {
                     <div className="font-medium text-gray-900">{major.total_credits} tín chỉ</div>
                   </td>
                   <td className="table-cell">
-                    {major.Department ? (
+                    {major.Faculty ? (
+                      <div className="flex items-center">
+                        <Building className="w-4 h-4 text-gray-400 mr-2" />
+                        <div>
+                          <div className="font-medium text-gray-900">{major.Faculty.faculty_name}</div>
+                          {major.Faculty.faculty_code && (
+                            <div className="text-sm text-gray-500">{major.Faculty.faculty_code}</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : major.Department ? (
                       <div className="flex items-center">
                         <Building className="w-4 h-4 text-gray-400 mr-2" />
                         <div>
@@ -477,16 +493,16 @@ const MajorManagement = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Khoa/Bộ môn
+                      Khoa
                     </label>
                     <select
-                      value={formData.department_id}
-                      onChange={(e) => setFormData({...formData, department_id: e.target.value})}
+                      value={formData.faculty_id}
+                      onChange={(e) => setFormData({...formData, faculty_id: e.target.value})}
                       className="input-field"
                     >
-                      <option value="">Chọn khoa/bộ môn</option>
-                      {departments.map(dept => (
-                        <option key={dept.id} value={dept.id}>{dept.department_name}</option>
+                      <option value="">Chọn khoa</option>
+                      {faculties.map(fac => (
+                        <option key={fac.id} value={fac.id}>{fac.faculty_name}</option>
                       ))}
                     </select>
                   </div>

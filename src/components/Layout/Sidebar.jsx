@@ -29,12 +29,16 @@ const Sidebar = ({ isOpen, onToggle }) => {
     { path: '/knowledge-blocks', label: 'Quản lý khối kiến thức', icon: GitBranch },
     { path: '/curriculum-structure', label: 'Quản lý cấu trúc CTĐT', icon: BookOpen },
     { path: '/programs', label: 'Quản lý chương trình', icon: ClipboardList },
+  ]
+
+  // Tài chính
+  const financeItems = [
     { path: '/tuition-calculator', label: 'Tính học phí', icon: Calculator },
   ]
 
   // Quản lý hệ thống (chỉ giữ cơ cấu tổ chức)
   const systemManagementItems = [
-    { path: '/departments', label: 'Quản lý cơ cấu tổ chức', icon: Settings },
+    { path: '/departments', label: 'Quản lý phòng ban, khoa & chức vụ', icon: Settings },
   ]
 
   // Quản lý nhân sự (mới thêm)
@@ -49,6 +53,8 @@ const Sidebar = ({ isOpen, onToggle }) => {
     }
   }
 
+  const currentPathWithSearch = `${location.pathname}${location.search}`
+
   const MenuSection = ({ title, items, className = "" }) => (
     <div className={`space-y-1 ${className}`}>
       {title && (
@@ -58,7 +64,9 @@ const Sidebar = ({ isOpen, onToggle }) => {
       )}
       {items.map((item) => {
         const Icon = item.icon
-        const isActive = location.pathname === item.path
+        const isActive = item.path.includes('?')
+          ? currentPathWithSearch === item.path
+          : location.pathname === item.path
         return (
           <Link
             key={item.path}
@@ -138,7 +146,12 @@ const Sidebar = ({ isOpen, onToggle }) => {
               className="pt-4 border-t border-blue-700"
             />
             <MenuSection
-              title="Quản lý hệ thống"
+              title="Tài chính"
+              items={financeItems}
+              className="pt-4 border-t border-blue-700"
+            />
+            <MenuSection
+              title="Quản lý cơ cấu tổ chức"
               items={systemManagementItems}
               className="pt-4 border-t border-blue-700"
             />

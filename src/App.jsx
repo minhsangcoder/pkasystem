@@ -14,7 +14,10 @@ import MajorManagement from '@/pages/MajorManagement'
 import KnowledgeBlockManagement from '@/pages/KnowledgeBlockManagement'
 import CurriculumStructureManagement from '@/pages/CurriculumStructureManagement'
 import ProgramManagement from '@/pages/ProgramManagement'
+import ProgramDetail from '@/pages/ProgramDetail'
 import TuitionCalculator from '@/pages/TuitionCalculator';
+import TuitionDetail from '@/pages/TuitionDetail';
+import FacultyManagement from '@/pages/FacultyManagement'
 
 // Quản lý nhân sự
 import LecturerManagement from '@/pages/LecturerManagement'
@@ -37,7 +40,10 @@ function App() {
             <Route path="knowledge-blocks" element={<KnowledgeBlockManagement />} />
             <Route path="curriculum-structure" element={<CurriculumStructureManagement />} />
             <Route path="programs" element={<ProgramManagement />} />
+            <Route path="chuong-trinh/:id" element={<ProgramDetail />} />
+            <Route path="hoc-phi/:id" element={<TuitionDetail />} />
             <Route path="departments" element={<DepartmentManagement />} />
+            <Route path="faculties" element={<FacultyManagement />} />
             <Route path="tuition-calculator" element={<TuitionCalculator />} />
 
             {/* Quản lý nhân sự */}

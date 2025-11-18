@@ -94,6 +94,111 @@ export const departmentAPI = {
   }
 }
 
+// FACULTIES API
+const parseDepartmentList = (value) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (error) {
+    return String(value)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean)
+  }
+}
+
+const normalizeFacultyPayload = (data) => ({
+  faculty_code: data.faculty_code,
+  faculty_name: data.faculty_name,
+  description: data.description || null,
+  is_active: data.is_active ?? true,
+  established_date: data.established_date || null,
+  dean_id: data.dean_id || null,
+  contact_email: data.contact_email || null,
+  contact_phone: data.contact_phone || null,
+  major_ids: Array.isArray(data.major_ids) ? data.major_ids : []
+})
+
+export const facultyAPI = {
+  getAll: async () => {
+    try {
+      const response = await api.get('/faculties')
+      return {
+        success: true,
+        data: (response.data || []).map(item => ({
+          ...item,
+          department_list: parseDepartmentList(item.department_list),
+          major_ids: Array.isArray(item.major_ids) ? item.major_ids : []
+        }))
+      }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể tải danh sách khoa')
+    }
+  },
+
+  create: async (facultyData) => {
+    if (!facultyData.faculty_code || !facultyData.faculty_name) {
+      throw new Error('Mã khoa và tên khoa là bắt buộc')
+    }
+
+    try {
+      const payload = normalizeFacultyPayload(facultyData)
+      const response = await api.post('/faculties', payload)
+      return {
+        success: true,
+        message: 'Thêm khoa thành công',
+        data: {
+          ...response.data,
+          department_list: parseDepartmentList(response.data?.department_list),
+          major_ids: Array.isArray(response.data?.major_ids) ? response.data.major_ids : []
+        }
+      }
+    } catch (error) {
+      const message = error.response?.data?.error || 'Không thể thêm khoa'
+      if (message.toLowerCase().includes('duplicate') || message.toLowerCase().includes('exists')) {
+        throw new Error('Mã khoa đã tồn tại')
+      }
+      throw new Error(message)
+    }
+  },
+
+  update: async (id, facultyData) => {
+    if (!facultyData.faculty_code || !facultyData.faculty_name) {
+      throw new Error('Mã khoa và tên khoa là bắt buộc')
+    }
+
+    try {
+      const payload = normalizeFacultyPayload(facultyData)
+      const response = await api.put(`/faculties/${id}`, payload)
+      return {
+        success: true,
+        message: 'Cập nhật khoa thành công',
+        data: {
+          ...response.data,
+          department_list: parseDepartmentList(response.data?.department_list),
+          major_ids: Array.isArray(response.data?.major_ids) ? response.data.major_ids : []
+        }
+      }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể cập nhật khoa')
+    }
+  },
+
+  delete: async (id) => {
+    try {
+      await api.delete(`/faculties/${id}`)
+      return {
+        success: true,
+        message: 'Xóa khoa thành công'
+      }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể xóa khoa')
+    }
+  }
+}
+
 // POSITIONS API
 export const positionAPI = {
   getAll: async () => {
@@ -451,6 +556,10 @@ export const programAPI = {
       const normalizedMajorId = data.major_id === undefined || data.major_id === null || data.major_id === ''
         ? null
         : Number(data.major_id)
+      const currentYear = new Date().getFullYear()
+      const normalizedStartYear = data.start_year === undefined || data.start_year === null || data.start_year === ''
+        ? currentYear
+        : Math.min(Math.max(Number(data.start_year), 2000), currentYear)
       const response = await api.post('/programs', {
         program_code: data.program_code,
         program_name: data.program_name,
@@ -459,9 +568,11 @@ export const programAPI = {
         end_date: data.end_date || null,
         is_active: data.is_active ?? true,
         major_id: normalizedMajorId,
+        start_year: normalizedStartYear,
         total_credits: normalizedCredits,
         knowledge_block_ids: normalizedKnowledgeBlocks,
-        course_ids: normalizedCourseIds
+        course_ids: normalizedCourseIds,
+        tuition_years: Array.isArray(data.tuition_years) ? data.tuition_years : []
       })
       return { success: true, data: response.data }
     } catch (error) {
@@ -501,6 +612,10 @@ export const programAPI = {
       const normalizedMajorId = data.major_id === undefined || data.major_id === null || data.major_id === ''
         ? null
         : Number(data.major_id)
+      const currentYear = new Date().getFullYear()
+      const normalizedStartYear = data.start_year === undefined || data.start_year === null || data.start_year === ''
+        ? undefined
+        : Math.min(Math.max(Number(data.start_year), 2000), currentYear)
       const response = await api.put(`/programs/${id}`, {
         program_code: data.program_code,
         program_name: data.program_name,
@@ -511,7 +626,9 @@ export const programAPI = {
         major_id: normalizedMajorId,
         total_credits: normalizedCredits,
         knowledge_block_ids: normalizedKnowledgeBlocks,
-        course_ids: normalizedCourseIds
+        course_ids: normalizedCourseIds,
+        ...(normalizedStartYear !== undefined ? { start_year: normalizedStartYear } : {}),
+        tuition_years: Array.isArray(data.tuition_years) ? data.tuition_years : []
       })
       return { success: true, data: response.data }
     } catch (error) {
@@ -524,6 +641,54 @@ export const programAPI = {
       return { success: true }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Không thể xóa chương trình')
+    }
+  },
+  getCourses: async (programId) => {
+    try {
+      const response = await api.get(`/programs/${programId}/courses`)
+      return { success: true, data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể tải học phần của chương trình')
+    }
+  },
+  addCourse: async (programId, payload) => {
+    try {
+      const response = await api.post(`/programs/${programId}/courses`, payload)
+      return { success: true, data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể thêm học phần vào chương trình')
+    }
+  },
+  removeCourse: async (programId, courseId) => {
+    try {
+      const response = await api.delete(`/programs/${programId}/courses/${courseId}`)
+      return { success: true, data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể xóa học phần khỏi chương trình')
+    }
+  },
+  updateCourse: async (programId, courseId, payload) => {
+    try {
+      const response = await api.put(`/programs/${programId}/courses/${courseId}`, payload)
+      return { success: true, data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể cập nhật học phần trong chương trình')
+    }
+  },
+  addKnowledgeBlock: async (programId, payload) => {
+    try {
+      const response = await api.post(`/programs/${programId}/knowledge-blocks`, payload)
+      return { success: true, data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể thêm khối kiến thức vào chương trình')
+    }
+  },
+  removeKnowledgeBlock: async (programId, blockId) => {
+    try {
+      const response = await api.delete(`/programs/${programId}/knowledge-blocks/${blockId}`)
+      return { success: true, data: response.data }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể xóa khối kiến thức khỏi chương trình')
     }
   }
 }
@@ -616,6 +781,18 @@ export const majorAPI = {
       }
     } catch (error) {
       throw new Error(error.response?.data?.error || 'Không thể tính học phí tối thiểu của ngành theo năm')
+    }
+  },
+
+  getMajorsWithLatestPrograms: async () => {
+    try {
+      const response = await api.get('/majors/with-latest-programs')
+      return {
+        success: true,
+        data: response.data
+      }
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Không thể tải danh sách ngành với chương trình đào tạo')
     }
   }
 }

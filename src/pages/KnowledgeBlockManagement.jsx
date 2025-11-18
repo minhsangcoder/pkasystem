@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Search, GitBranch } from 'lucide-react'
-import { knowledgeBlockAPI, majorAPI } from '@/services/api'
+import { knowledgeBlockAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
 const KnowledgeBlockManagement = () => {
   const [blocks, setBlocks] = useState([])
-  const [majors, setMajors] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
   const [selectedBlock, setSelectedBlock] = useState(null)
   const [formData, setFormData] = useState({
-    block_code: '', block_name: '', description: '', total_credits: 0,
-    is_required: true, major_id: '', is_active: true
+    block_code: '',
+    block_name: '',
+    description: '',
+    min_credits: '',
+    max_credits: '',
+    is_required: true,
+    is_active: true
   })
 
   useEffect(() => { loadData() }, [])
@@ -21,9 +25,8 @@ const KnowledgeBlockManagement = () => {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [blocksRes, majorsRes] = await Promise.all([knowledgeBlockAPI.getAll(), majorAPI.getAll()])
+      const blocksRes = await knowledgeBlockAPI.getAll()
       setBlocks(blocksRes.data)
-      setMajors(majorsRes.data)
     } catch (error) {
       toast.error(error.message)
     } finally {
@@ -36,10 +39,20 @@ const KnowledgeBlockManagement = () => {
     b.block_code.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const resetForm = () => ({
+    block_code: '',
+    block_name: '',
+    description: '',
+    min_credits: '',
+    max_credits: '',
+    is_required: true,
+    is_active: true
+  })
+
   const handleCreate = () => {
     setModalType('create')
     setSelectedBlock(null)
-    setFormData({ block_code: '', block_name: '', description: '', total_credits: 0, is_required: true, major_id: '', is_active: true })
+    setFormData(resetForm())
     setShowModal(true)
   }
 
@@ -47,8 +60,13 @@ const KnowledgeBlockManagement = () => {
     setModalType('edit')
     setSelectedBlock(block)
     setFormData({
-      block_code: block.block_code, block_name: block.block_name, description: block.description || '',
-      total_credits: block.total_credits, is_required: block.is_required, major_id: block.major_id || '', is_active: block.is_active
+      block_code: block.block_code,
+      block_name: block.block_name,
+      description: block.description || '',
+      min_credits: block.min_credits ?? '',
+      max_credits: block.max_credits ?? '',
+      is_required: block.is_required,
+      is_active: block.is_active
     })
     setShowModal(true)
   }
@@ -68,11 +86,38 @@ const KnowledgeBlockManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
+      const minCredits = formData.min_credits === '' ? null : parseInt(formData.min_credits, 10)
+      const maxCredits = formData.max_credits === '' ? null : parseInt(formData.max_credits, 10)
+
+      if (minCredits !== null && minCredits < 0) {
+        toast.error('Tín chỉ tối thiểu phải >= 0')
+        return
+      }
+      if (maxCredits !== null && maxCredits < 0) {
+        toast.error('Tín chỉ tối đa phải >= 0')
+        return
+      }
+      if (minCredits !== null && maxCredits !== null && minCredits > maxCredits) {
+        toast.error('Tín chỉ tối thiểu phải nhỏ hơn hoặc bằng tín chỉ tối đa')
+        return
+      }
+
+      const payload = {
+        block_code: formData.block_code,
+        block_name: formData.block_name,
+        description: formData.description,
+        min_credits: minCredits,
+        max_credits: maxCredits,
+        is_required: formData.is_required,
+        is_active: formData.is_active,
+        total_credits: maxCredits ?? minCredits ?? 0
+      }
+
       if (modalType === 'create') {
-        await knowledgeBlockAPI.create(formData)
+        await knowledgeBlockAPI.create(payload)
         toast.success('Tạo thành công!')
       } else {
-        await knowledgeBlockAPI.update(selectedBlock.id, formData)
+        await knowledgeBlockAPI.update(selectedBlock.id, payload)
         toast.success('Cập nhật thành công!')
       }
       await loadData()
@@ -148,8 +193,7 @@ const KnowledgeBlockManagement = () => {
               <tr>
                 <th className="table-header">Mã khối</th>
                 <th className="table-header">Tên khối</th>
-                <th className="table-header">Ngành học</th>
-                <th className="table-header">Tín chỉ</th>
+                <th className="table-header">Tín chỉ (min - max)</th>
                 <th className="table-header">Loại</th>
                 <th className="table-header">Trạng thái</th>
                 <th className="table-header">Thao tác</th>
@@ -163,8 +207,11 @@ const KnowledgeBlockManagement = () => {
                     <div className="font-medium text-gray-900">{block.block_name}</div>
                     {block.description && <div className="text-sm text-gray-500 truncate max-w-xs">{block.description}</div>}
                   </td>
-                  <td className="table-cell">{block.Major?.major_name || <span className="text-gray-400">Chưa gán</span>}</td>
-                  <td className="table-cell font-medium">{block.total_credits}</td>
+                  <td className="table-cell font-medium">
+                    {block.min_credits ?? block.max_credits
+                      ? `${block.min_credits ?? block.max_credits ?? 0} - ${block.max_credits ?? block.min_credits ?? 0}`
+                      : `${block.total_credits ?? 0}`}
+                  </td>
                   <td className="table-cell">
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${block.is_required ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
                       {block.is_required ? 'Bắt buộc' : 'Tự chọn'}
@@ -212,16 +259,26 @@ const KnowledgeBlockManagement = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Số tín chỉ</label>
-                  <input type="number" value={formData.total_credits} onChange={(e) => setFormData({...formData, total_credits: parseInt(e.target.value) || 0})}
-                    className="input-field" min="0" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tín chỉ tối thiểu</label>
+                  <input
+                    type="number"
+                    value={formData.min_credits}
+                    onChange={(e) => setFormData({ ...formData, min_credits: e.target.value })}
+                    className="input-field"
+                    min="0"
+                    placeholder="Ví dụ 30"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ngành học</label>
-                  <select value={formData.major_id} onChange={(e) => setFormData({...formData, major_id: e.target.value})} className="input-field">
-                    <option value="">Chọn ngành học</option>
-                    {majors.map(m => <option key={m.id} value={m.id}>{m.major_name}</option>)}
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tín chỉ tối đa</label>
+                  <input
+                    type="number"
+                    value={formData.max_credits}
+                    onChange={(e) => setFormData({ ...formData, max_credits: e.target.value })}
+                    className="input-field"
+                    min="0"
+                    placeholder="Ví dụ 45"
+                  />
                 </div>
               </div>
               <div className="flex items-center space-x-4">

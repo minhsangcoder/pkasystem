@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Search, Filter, Calendar, BookOpen } from 'lucide-react'
-import { cohortAPI, courseAPI, employeeAPI, programAPI } from '@/services/api'
+import { cohortAPI, courseAPI, employeeAPI, programAPI, majorAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
 const CohortManagement = () => {
   const [cohorts, setCohorts] = useState([])
   const [courses, setCourses] = useState([])
   const [programs, setPrograms] = useState([])
+  const [majors, setMajors] = useState([])
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -23,6 +24,7 @@ const CohortManagement = () => {
     status: 'planning',
     course_id: '',
     program_id: '',
+    major_id: '',
     instructor_id: ''
   })
 
@@ -33,16 +35,18 @@ const CohortManagement = () => {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [cohortsRes, coursesRes, employeesRes, programsRes] = await Promise.all([
+      const [cohortsRes, coursesRes, employeesRes, programsRes, majorsRes] = await Promise.all([
         cohortAPI.getAll(),
         courseAPI.getAll(),
         employeeAPI.getAll(),
-        programAPI.getAll()
+        programAPI.getAll(),
+        majorAPI.getAll()
       ])
       setCohorts(cohortsRes.data)
       setCourses(coursesRes.data)
       setEmployees(employeesRes.data)
       setPrograms(programsRes.data)
+      setMajors(majorsRes.data)
     } catch (error) {
       toast.error(error.message)
     } finally {
@@ -50,11 +54,23 @@ const CohortManagement = () => {
     }
   }
 
+  const getTimelineStatus = (cohort) => {
+    const now = new Date()
+    const startDate = cohort.start_date ? new Date(cohort.start_date) : null
+    const endDate = cohort.end_date ? new Date(cohort.end_date) : null
+
+    if (startDate && now < startDate) return 'planning'
+    if (startDate && (!endDate || now <= endDate)) return 'active'
+    if (endDate && now > endDate) return 'completed'
+    return cohort.status || 'planning'
+  }
+
   const filteredCohorts = cohorts.filter(c => {
     const matchSearch =
       c.cohort_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.cohort_code.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchStatus = statusFilter === 'all' || c.status === statusFilter
+    const derivedStatus = getTimelineStatus(c)
+    const matchStatus = statusFilter === 'all' || derivedStatus === statusFilter
     return matchSearch && matchStatus
   })
 
@@ -70,6 +86,7 @@ const CohortManagement = () => {
       status: 'planning',
       course_id: '',
       program_id: '',
+      major_id: '',
       instructor_id: ''
     })
     setShowModal(true)
@@ -87,6 +104,7 @@ const CohortManagement = () => {
       status: c.status,
       course_id: c.course_id || '',
       program_id: c.program_id || '',
+      major_id: c.major_id || '',
       instructor_id: c.instructor_id || ''
     })
     setShowModal(true)
@@ -126,7 +144,6 @@ const CohortManagement = () => {
       case 'planning': return 'bg-blue-100 text-blue-800'
       case 'active': return 'bg-green-100 text-green-800'
       case 'completed': return 'bg-gray-100 text-gray-800'
-      case 'cancelled': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -134,10 +151,9 @@ const CohortManagement = () => {
   const getStatusText = (status) => {
     switch (status) {
       case 'planning': return 'Đang lên kế hoạch'
-      case 'active': return 'Đang học'
-      case 'completed': return 'Đã kết thúc'
-      case 'cancelled': return 'Đã hủy'
-      default: return status
+      case 'active': return 'Đang tiến hành'
+      case 'completed': return 'Đã hoàn thành'
+      default: return 'Đang lên kế hoạch'
     }
   }
 
@@ -211,9 +227,8 @@ const CohortManagement = () => {
           >
             <option value="all">Tất cả trạng thái</option>
             <option value="planning">Đang lên kế hoạch</option>
-            <option value="active">Đang học</option>
-            <option value="completed">Đã kết thúc</option>
-            <option value="cancelled">Đã hủy</option>
+            <option value="active">Đang tiến hành</option>
+            <option value="completed">Đã hoàn thành</option>
           </select>
         </div>
         <button className="flex items-center border rounded-md px-4 py-2">
@@ -229,6 +244,7 @@ const CohortManagement = () => {
               <tr>
                 <th className="table-header">Mã khóa</th>
                 <th className="table-header">Tên khóa học</th>
+                <th className="table-header">Ngành</th>
                 <th className="table-header">Chương trình đào tạo</th>
                 <th className="table-header">Thời gian</th>
                 <th className="table-header">Trạng thái</th>
@@ -236,12 +252,17 @@ const CohortManagement = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredCohorts.map(c => (
-                <tr key={c.id} className="hover:bg-gray-50">
+              {filteredCohorts.map(c => {
+                const timelineStatus = getTimelineStatus(c)
+                return (
+                  <tr key={c.id} className="hover:bg-gray-50">
                   <td className="table-cell font-medium text-blue-600">{c.cohort_code}</td>
                   <td className="table-cell">
                     <div className="font-medium text-gray-900">{c.cohort_name}</div>
                     <div className="text-sm text-gray-500">{c.description}</div>
+                  </td>
+                  <td className="table-cell">
+                    {c.Major ? `${c.Major.major_code} - ${c.Major.major_name}` : <span className="text-gray-400">Chưa gán ngành</span>}
                   </td>
                   <td className="table-cell">
                     {c.Program ? c.Program.program_name : <span className="text-gray-400">Chưa gán CTĐT</span>}
@@ -250,8 +271,8 @@ const CohortManagement = () => {
                     {formatDate(c.start_date)} – {formatDate(c.end_date)}
                   </td>
                   <td className="table-cell">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(c.status)}`}>
-                      {getStatusText(c.status)}
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(timelineStatus)}`}>
+                      {getStatusText(timelineStatus)}
                     </span>
                   </td>
                   <td className="table-cell flex space-x-2">
@@ -262,8 +283,9 @@ const CohortManagement = () => {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -333,6 +355,20 @@ const CohortManagement = () => {
               </div>
 
               <div>
+                <label className="text-sm font-medium text-gray-700">Ngành</label>
+                <select
+                  value={formData.major_id}
+                  onChange={(e) => setFormData({ ...formData, major_id: e.target.value })}
+                  className="input-field"
+                >
+                  <option value="">Chọn ngành</option>
+                  {majors.map(m => (
+                    <option key={m.id} value={m.id}>{m.major_code} - {m.major_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="text-sm font-medium text-gray-700">Chương trình đào tạo</label>
                 <select
                   value={formData.program_id}
@@ -340,9 +376,11 @@ const CohortManagement = () => {
                   className="input-field"
                 >
                   <option value="">Chọn CTĐT</option>
-                  {programs.map(p => (
-                    <option key={p.id} value={p.id}>{p.program_name}</option>
-                  ))}
+                  {programs
+                    .filter(p => !formData.major_id || p.major_id === Number(formData.major_id))
+                    .map(p => (
+                      <option key={p.id} value={p.id}>{p.program_code} - {p.program_name}</option>
+                    ))}
                 </select>
               </div>
 

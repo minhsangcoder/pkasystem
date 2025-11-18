@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Search, Filter, Building, Users } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Filter, Building, Users, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { departmentAPI, positionAPI } from '@/services/api'  // Import API service
+import { departmentAPI, positionAPI } from '@/services/api'
+import FacultyManagement from '@/pages/FacultyManagement'
 
 const DepartmentManagement = () => {
   const [activeTab, setActiveTab] = useState('departments')
   const [departments, setDepartments] = useState([])
   const [positions, setPositions] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [facultySearchTerm, setFacultySearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
@@ -17,6 +19,13 @@ const DepartmentManagement = () => {
     name: '',
     description: '',
     status: 'active'
+  })
+
+  const [facultyStats, setFacultyStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0,
+    withDean: 0
   })
 
   // Load dữ liệu khi component mount
@@ -183,21 +192,21 @@ const DepartmentManagement = () => {
     )
   }
 
-  // Bảng hiển thị phòng ban
+  // Bảng hiển thị đơn vị
   const DepartmentTable = () => (
     <div className="bg-white shadow overflow-hidden sm:rounded-md">
       {filteredDepartments.length === 0 ? (
         <div className="text-center py-12">
           <Building className="mx-auto h-12 w-12 text-gray-400 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Không có dữ liệu</h3>
-          <p className="text-gray-500">Chưa có phòng ban nào hoặc không có kết quả tìm kiếm.</p>
+          <p className="text-gray-500">Chưa có đơn vị nào hoặc không có kết quả tìm kiếm.</p>
         </div>
       ) : (
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="table-header">Mã phòng ban</th>
-              <th className="table-header">Tên phòng ban</th>
+              <th className="table-header">Mã đơn vị</th>
+              <th className="table-header">Tên đơn vị</th>
               <th className="table-header">Mô tả</th>
               <th className="table-header">Trạng thái</th>
               <th className="table-header">Thao tác</th>
@@ -305,48 +314,67 @@ const DepartmentManagement = () => {
     </div>
   )
 
+  const isFacultyTab = activeTab === 'faculties'
+
+  const activeSearchTerm = isFacultyTab ? facultySearchTerm : searchTerm
+  const searchPlaceholder = isFacultyTab ? 'Tìm kiếm theo mã, tên khoa, trưởng khoa...' : 'Tìm kiếm...'
+
+  const departmentStatsCards = [
+    {
+      label: 'Tổng đơn vị',
+      value: departments.length,
+      icon: Building,
+      color: 'bg-blue-500'
+    },
+    {
+      label: 'Tổng chức vụ',
+      value: positions.length,
+      icon: Users,
+      color: 'bg-green-500'
+    }
+  ]
+
+  const facultyStatsCards = [
+    { label: 'Tổng số khoa', value: facultyStats.total, icon: Building2, color: 'bg-blue-500' },
+    { label: 'Đang hoạt động', value: facultyStats.active, icon: Users, color: 'bg-green-500' },
+    { label: 'Ngừng hoạt động', value: facultyStats.inactive, icon: Users, color: 'bg-gray-500' },
+    { label: 'Đã bổ nhiệm trưởng khoa', value: facultyStats.withDean, icon: Users, color: 'bg-indigo-500' }
+  ]
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Quản lý cơ cấu tổ chức</h1>
-          <p className="text-gray-600 mt-2">Quản lý phòng ban và chức vụ trong tổ chức</p>
+          <p className="text-gray-600 mt-2">Quản lý đơn vị, khoa và chức vụ trong tổ chức</p>
         </div>
-        <button 
-          onClick={handleCreate} 
-          className="btn-primary flex items-center space-x-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Thêm mới</span>
-        </button>
+        {isFacultyTab ? null : (
+          <button
+            onClick={handleCreate}
+            className="btn-primary flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Thêm mới</span>
+          </button>
+        )}
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="card">
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-500 rounded-full">
-              <Building className="w-6 h-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Tổng phòng ban</p>
-              <p className="text-2xl font-bold text-gray-900">{departments.length}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="card">
-          <div className="flex items-center">
-            <div className="p-3 bg-green-500 rounded-full">
-              <Users className="w-6 h-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Tổng chức vụ</p>
-              <p className="text-2xl font-bold text-gray-900">{positions.length}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {(isFacultyTab ? facultyStatsCards : departmentStatsCards).map(({ label, value, icon: Icon, color }) => (
+          <div key={label} className="card">
+            <div className="flex items-center">
+              <div className={`p-3 ${color} rounded-full`}>
+                <Icon className="w-6 h-6 text-white" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">{label}</p>
+                <p className="text-2xl font-bold text-gray-900">{value}</p>
+              </div>
             </div>
           </div>
-        </div>
+        ))}
       </div>
 
       {/* Tabs */}
@@ -361,7 +389,18 @@ const DepartmentManagement = () => {
             }`}
           >
             <Building className="w-5 h-5 inline mr-2" />
-            Phòng ban ({departments.length})
+            Đơn vị ({departments.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('faculties')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'faculties'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <Building2 className="w-5 h-5 inline mr-2" />
+            Khoa
           </button>
           <button
             onClick={() => setActiveTab('positions')}
@@ -384,9 +423,16 @@ const DepartmentManagement = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="Tìm kiếm..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={searchPlaceholder}
+              value={activeSearchTerm}
+              onChange={(e) => {
+                const value = e.target.value
+                if (isFacultyTab) {
+                  setFacultySearchTerm(value)
+                } else {
+                  setSearchTerm(value)
+                }
+              }}
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -398,22 +444,35 @@ const DepartmentManagement = () => {
       </div>
 
       {/* Table */}
-      {activeTab === 'departments' ? <DepartmentTable /> : <PositionTable />}
+      {activeTab === 'departments' && <DepartmentTable />}
+      {activeTab === 'positions' && <PositionTable />}
+      {activeTab === 'faculties' && (
+        <div className="bg-white shadow rounded-xl p-4">
+          <FacultyManagement
+            embedded
+            showHeader={false}
+            showStats={false}
+            showSearch={false}
+            searchTermOverride={facultySearchTerm}
+            onStatsChange={setFacultyStats}
+          />
+        </div>
+      )}
 
       {/* Modal */}
-      {showModal && (
+      {showModal && !isFacultyTab && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
           <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">
                 {modalType === 'create' 
-                  ? `Thêm ${activeTab === 'departments' ? 'phòng ban' : 'chức vụ'} mới`
-                  : `Chỉnh sửa ${activeTab === 'departments' ? 'phòng ban' : 'chức vụ'}`}
+                  ? `Thêm ${activeTab === 'departments' ? 'đơn vị' : 'chức vụ'} mới`
+                  : `Chỉnh sửa ${activeTab === 'departments' ? 'đơn vị' : 'chức vụ'}`}
               </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Mã {activeTab === 'departments' ? 'phòng ban' : 'chức vụ'} *
+                    Mã {activeTab === 'departments' ? 'đơn vị' : 'chức vụ'} *
                   </label>
                   <input
                     type="text"
@@ -430,7 +489,7 @@ const DepartmentManagement = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tên {activeTab === 'departments' ? 'phòng ban' : 'chức vụ'} *
+                    Tên {activeTab === 'departments' ? 'đơn vị' : 'chức vụ'} *
                   </label>
                   <input
                     type="text"
@@ -473,7 +532,7 @@ const DepartmentManagement = () => {
                         className="input-field"
                         required
                       >
-                        <option value="">Chọn phòng ban</option>
+                        <option value="">Chọn đơn vị</option>
                         {departments.map(dept => (
                           <option key={dept.id} value={dept.id}>{dept.department_name}</option>
                         ))}

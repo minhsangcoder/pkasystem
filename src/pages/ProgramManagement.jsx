@@ -1,22 +1,31 @@
 import React, { useEffect, useState } from 'react'
-import { programAPI, knowledgeBlockAPI, courseAPI, majorAPI } from '@/services/api'
+import { useNavigate } from 'react-router-dom'
+import { programAPI, courseAPI, majorAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
+const CURRENT_YEAR = new Date().getFullYear()
+const COURSE_TYPE_OPTIONS = [
+  { value: 'Bắt buộc', label: 'Bắt buộc' },
+  { value: 'Tự chọn', label: 'Tự chọn' },
+  { value: 'Tự do', label: 'Tự do' }
+]
+
 function ProgramManagement() {
+  const navigate = useNavigate()
   const [programs, setPrograms] = useState([])
   const [loading, setLoading] = useState(false)
-  const [knowledgeBlocks, setKnowledgeBlocks] = useState([])
   const [courses, setCourses] = useState([])
   const [majors, setMajors] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
-  const [courseSearch, setCourseSearch] = useState('')
+
   const [modalForm, setModalForm] = useState({
     program_code: '',
     program_name: '',
     description: '',
     start_date: '',
     end_date: '',
+    start_year: CURRENT_YEAR,
     is_active: true,
     major_id: '',
     knowledge_block_ids: [],
@@ -45,6 +54,9 @@ function ProgramManagement() {
           KnowledgeBlocks: Array.isArray(item.KnowledgeBlocks) ? item.KnowledgeBlocks : [],
           Courses: Array.isArray(item.Courses) ? item.Courses : [],
           Major: item.Major || null, // Ensure Major is preserved (can be null if not set or not found)
+           TuitionYears: Array.isArray(item.TuitionYears)
+             ? item.TuitionYears.sort((a, b) => b.year - a.year)
+             : [],
           total_credits: parseCreditsValue(item.total_credits)
         }
       })
@@ -53,15 +65,6 @@ function ProgramManagement() {
       toast.error(e.message)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fetchKnowledgeBlocks = async () => {
-    try {
-      const res = await knowledgeBlockAPI.getAll()
-      setKnowledgeBlocks(res.data || [])
-    } catch (e) {
-      toast.error('Không thể tải khối kiến thức')
     }
   }
 
@@ -85,68 +88,95 @@ function ProgramManagement() {
 
   useEffect(() => {
     fetchPrograms()
-    fetchKnowledgeBlocks()
     fetchCourses()
     fetchMajors()
   }, [])
 
+  const buildProgramFormFromRecord = (record, overrides = {}) => {
+    if (!record) {
+      return {
+        program_code: '',
+        program_name: '',
+        description: '',
+        start_date: '',
+        end_date: '',
+        start_year: CURRENT_YEAR,
+        is_active: true,
+        major_id: '',
+        knowledge_block_ids: [],
+        course_ids: [],
+        total_credits: ''
+      }
+    }
+    const majorId = record.major_id || (record.Major && record.Major.id) || null
+    const startYear = record.start_year || (record.start_date ? new Date(record.start_date).getFullYear() : CURRENT_YEAR)
+    return {
+      id: record.id,
+      knowledge_block_ids: Array.isArray(record.KnowledgeBlocks) ? record.KnowledgeBlocks.map(kb => kb.id) : [],
+      course_ids: Array.isArray(record.Courses) ? record.Courses.map(course => course.id) : [],
+      program_code: record.program_code || '',
+      program_name: record.program_name || '',
+      start_date: record.start_date || '',
+      end_date: record.end_date || '',
+      description: record.description || '',
+      is_active: record.is_active !== undefined ? record.is_active : true,
+      major_id: majorId ? String(majorId) : '',
+      start_year: startYear,
+      total_credits: (() => {
+        const parsed = parseCreditsValue(record.total_credits)
+        return parsed === null ? '' : parsed
+      })(),
+      ...overrides
+    }
+  }
+
   const openCreateModal = () => {
     setModalType('create')
-    setCourseSearch('')
-    setModalForm({
-      program_code: '',
-      program_name: '',
-      description: '',
-      start_date: '',
-      end_date: '',
-      is_active: true,
-      major_id: '',
-      knowledge_block_ids: [],
-      course_ids: [],
-      total_credits: ''
-    })
+    setModalForm(buildProgramFormFromRecord(null))
     setShowModal(true)
   }
 
   const openEditModal = (p) => {
     setModalType('edit')
-    setCourseSearch('')
-    // Get major_id from either direct field or Major association
-    const majorId = p.major_id || (p.Major && p.Major.id) || null
-    // Debug logging
-    console.log('[openEditModal] Program data:', {
-      id: p.id,
-      program_code: p.program_code,
-      major_id: p.major_id,
-      Major: p.Major,
-      resolvedMajorId: majorId
+    setModalForm(buildProgramFormFromRecord(p))
+    setShowModal(true)
+  }
+
+  const openCloneModal = (p) => {
+    const suffixCode = p.program_code ? `${p.program_code}-COPY` : ''
+    const suffixName = p.program_name ? `${p.program_name} (Copy)` : ''
+    const form = buildProgramFormFromRecord(p, {
+      id: undefined,
+      program_code: suffixCode,
+      program_name: suffixName
     })
-    setModalForm({
-      id: p.id,
-      knowledge_block_ids: Array.isArray(p.KnowledgeBlocks) ? p.KnowledgeBlocks.map(kb => kb.id) : [],
-      course_ids: Array.isArray(p.Courses) ? p.Courses.map(course => course.id) : [],
-      program_code: p.program_code || '',
-      program_name: p.program_name || '',
-      start_date: p.start_date || '',
-      end_date: p.end_date || '',
-      description: p.description || '',
-      is_active: p.is_active !== undefined ? p.is_active : true,
-      major_id: majorId ? String(majorId) : '',
-      total_credits: (() => {
-        const parsed = parseCreditsValue(p.total_credits)
-        return parsed === null ? '' : parsed
-      })()
-    })
+    setModalType('clone')
+    setModalForm(form)
     setShowModal(true)
   }
 
   const closeModal = () => {
     setShowModal(false)
-    setCourseSearch('')
+  }
+
+  const openDetailModal = (programId) => {
+    navigate(`/chuong-trinh/${programId}`)
   }
 
   const handleModalChange = (e) => {
     const { name, value, type, checked } = e.target
+
+    if (name === 'start_year') {
+      const numeric = value === ''
+        ? ''
+        : Math.min(Math.max(Number(value) || CURRENT_YEAR, 2000), CURRENT_YEAR)
+      setModalForm(prev => ({
+        ...prev,
+        start_year: numeric
+      }))
+      return
+    }
+
     if (name === 'knowledge_block_ids' || name === 'course_ids') {
       // handled by checkbox below
     } else {
@@ -159,30 +189,6 @@ function ProgramManagement() {
           : value,
       }))
     }
-  }
-
-  const handleKBCheckbox = (id, checked) => {
-    setModalForm(prev => {
-      let ids = prev.knowledge_block_ids.slice()
-      if (checked) {
-        if (!ids.includes(id)) ids.push(id)
-      } else {
-        ids = ids.filter(kid => kid !== id)
-      }
-      return { ...prev, knowledge_block_ids: ids }
-    })
-  }
-
-  const handleCourseCheckbox = (id, checked) => {
-    setModalForm(prev => {
-      let ids = prev.course_ids.slice()
-      if (checked) {
-        if (!ids.includes(id)) ids.push(id)
-      } else {
-        ids = ids.filter(cid => cid !== id)
-      }
-      return { ...prev, course_ids: ids }
-    })
   }
 
   const handleModalSubmit = async (e) => {
@@ -210,11 +216,12 @@ function ProgramManagement() {
           ? modalForm.course_ids.slice()
           : [],
         total_credits: modalForm.total_credits,
+        start_year: modalForm.start_year || CURRENT_YEAR
       }
 
-      if (modalType === 'create') {
+      if (modalType === 'create' || modalType === 'clone') {
         await programAPI.create(payload)
-        toast.success('Tạo chương trình đào tạo thành công')
+        toast.success(modalType === 'clone' ? 'Sao chép chương trình đào tạo thành công' : 'Tạo chương trình đào tạo thành công')
       } else {
         await programAPI.update(modalForm.id, payload)
         toast.success('Cập nhật chương trình đào tạo thành công')
@@ -237,23 +244,10 @@ function ProgramManagement() {
     }
   }
 
-  const normalizedCourseSearch = courseSearch.trim().toLowerCase()
-  const filteredCourses = courses
-    .slice()
-    .filter(course => {
-      if (!normalizedCourseSearch) return true
-      const keyword = `${course.course_name ?? ''} ${course.course_code ?? ''}`.toLowerCase()
-      return keyword.includes(normalizedCourseSearch)
-    })
-    .sort((a, b) => (a.course_name || '').localeCompare(b.course_name || '', 'vi', { sensitivity: 'base' }))
-
-  const selectedCourseDetails = modalForm.course_ids
-    .map(id => courses.find(course => course.id === id))
-    .filter(Boolean)
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
         <h1 className="text-2xl font-semibold">Quản lý chương trình đào tạo</h1>
         <button onClick={openCreateModal} className="btn-primary flex items-center space-x-2">
           <span>+ Thêm chương trình đào tạo</span>
@@ -265,7 +259,11 @@ function ProgramManagement() {
           <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
           <div className="relative bg-white w-full max-w-2xl rounded-xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">{modalType === 'create' ? 'Thêm chương trình đào tạo' : 'Chỉnh sửa chương trình đào tạo'}</h2>
+              <h2 className="text-xl font-semibold">
+                {modalType === 'create' && 'Thêm chương trình đào tạo'}
+                {modalType === 'edit' && 'Chỉnh sửa chương trình đào tạo'}
+                {modalType === 'clone' && 'Sao chép chương trình đào tạo'}
+              </h2>
               <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">✕</button>
             </div>
             <form onSubmit={handleModalSubmit} className="space-y-6">
@@ -343,6 +341,21 @@ function ProgramManagement() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium mb-1">Năm bắt đầu chương trình *</label>
+                  <input
+                    type="number"
+                    name="start_year"
+                    min={2000}
+                    max={CURRENT_YEAR}
+                    value={modalForm.start_year}
+                    onChange={handleModalChange}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
                   <label className="block text-sm font-medium mb-1">Tổng số tín chỉ</label>
                   <input
                     type="number"
@@ -366,94 +379,6 @@ function ProgramManagement() {
                   <span>Hoạt động</span>
                 </label>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Khối kiến thức</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {knowledgeBlocks.map(b => (
-                    <label key={b.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={modalForm.knowledge_block_ids.includes(b.id)}
-                        onChange={e => handleKBCheckbox(b.id, e.target.checked)}
-                      />
-                      {b.block_name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium">Học phần</label>
-                  <input
-                    type="text"
-                    value={courseSearch}
-                    onChange={(e) => setCourseSearch(e.target.value)}
-                    placeholder="Tìm kiếm học phần theo tên hoặc mã..."
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto border border-gray-200 rounded-lg p-3">
-                  {filteredCourses.length > 0 ? (
-                    filteredCourses.map(course => (
-                      <label key={course.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={modalForm.course_ids.includes(course.id)}
-                          onChange={(e) => handleCourseCheckbox(course.id, e.target.checked)}
-                        />
-                        <div className="flex flex-col">
-                          <span className="font-medium text-gray-800">
-                            {course.course_name}
-                          </span>
-                          <span className="text-xs text-gray-500 flex items-center gap-2">
-                            <span>
-                              {course.course_code ?? '---'}
-                              {course.total_credits ? ` · ${course.total_credits} TC` : ''}
-                            </span>
-                            {course.is_active === false && (
-                              <span className="text-red-500 font-medium">Ngưng</span>
-                            )}
-                          </span>
-                        </div>
-                      </label>
-                    ))
-                  ) : (
-                    <span className="text-sm text-gray-500 italic">Không tìm thấy học phần phù hợp</span>
-                  )}
-                </div>
-                {selectedCourseDetails.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="block text-sm font-medium text-gray-700">Học phần đã chọn:</span>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedCourseDetails.map(course => (
-                        <button
-                          key={course.id}
-                          type="button"
-                          onClick={() => handleCourseCheckbox(course.id, false)}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
-                          title="Bỏ chọn học phần này"
-                        >
-                          <span>{course.course_name}</span>
-                          <span className="text-xs text-blue-500 bg-white/70 rounded-full px-2 py-0.5">
-                            {course.course_code ?? '---'}
-                          </span>
-                          {course.total_credits ? (
-                            <span className="text-xs text-blue-500 bg-white/70 rounded-full px-2 py-0.5">
-                              {course.total_credits} TC
-                            </span>
-                          ) : null}
-                          {course.is_active === false && (
-                            <span className="text-xs text-red-500 bg-white/70 rounded-full px-2 py-0.5">
-                              Ngưng
-                            </span>
-                          )}
-                          <span className="text-xs text-blue-500">✕</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
               <div className="flex justify-end space-x-3 pt-4 border-t">
                 <button
                   type="button"
@@ -466,7 +391,9 @@ function ProgramManagement() {
                   type="submit"
                   className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white"
                 >
-                  {modalType === 'create' ? 'Tạo mới' : 'Lưu thay đổi'}
+                  {modalType === 'create' && 'Tạo mới'}
+                  {modalType === 'edit' && 'Lưu thay đổi'}
+                  {modalType === 'clone' && 'Sao chép'}
                 </button>
               </div>
             </form>
@@ -485,14 +412,14 @@ function ProgramManagement() {
                 <tr className="text-left">
                   <th className="p-2">Mã</th>
                   <th className="p-2">Tên chương trình đào tạo</th>
+                  <th className="p-2">Hành động</th>
                   <th className="p-2">Ngành học</th>
+                  <th className="p-2">Năm bắt đầu</th>
                   <th className="p-2">Tổng tín chỉ</th>
                   <th className="p-2">Ngày bắt đầu</th>
                   <th className="p-2">Ngày kết thúc</th>
                   <th className="p-2">Trạng thái</th>
-                  <th className="p-2">Khối kiến thức</th>
-                  <th className="p-2">Học phần</th>
-                  <th className="p-2">Hành động</th>
+                  <th className="p-2">Quản lý</th>
                 </tr>
               </thead>
               <tbody>
@@ -500,6 +427,22 @@ function ProgramManagement() {
                   <tr key={p.id} className="border-t">
                     <td className="p-2">{p.program_code}</td>
                     <td className="p-2">{p.program_name}</td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => openDetailModal(p.id)}
+                          className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                        >
+                          Xem chi tiết
+                        </button>
+                        <button
+                          onClick={() => openCloneModal(p)}
+                          className="px-3 py-1.5 rounded-lg border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 transition"
+                        >
+                          Sao chép
+                        </button>
+                      </div>
+                    </td>
                     <td className="p-2">
                       {p.Major ? (
                         <span className="text-gray-800" title={`ID: ${p.Major.id}`}>
@@ -513,39 +456,16 @@ function ProgramManagement() {
                         <span className="text-gray-400" title="Chưa gán ngành học">-</span>
                       )}
                     </td>
+                  <td className="p-2">{p.start_year || '-'}</td>
                     <td className="p-2">{p.total_credits ?? '-'}</td>
                     <td className="p-2">{p.start_date || '-'}</td>
                     <td className="p-2">{p.end_date || '-'}</td>
                     <td className="p-2">{p.is_active ? 'Active' : 'Inactive'}</td>
                     <td className="p-2">
-                      {Array.isArray(p.KnowledgeBlocks) && p.KnowledgeBlocks.length > 0 ? (
-                        <ul className="list-disc pl-4">
-                          {p.KnowledgeBlocks.map(kb => (
-                            <li key={kb.id}>{kb.block_name}</li>
-                          ))}
-                        </ul>
-                      ) : <span className="text-gray-400">-</span>}
-                    </td>
-                    <td className="p-2">
-                      {Array.isArray(p.Courses) && p.Courses.length > 0 ? (
-                        <ul className="list-disc pl-4">
-                          {p.Courses.map(course => (
-                            <li key={course.id}>
-                              <span className="font-medium text-gray-800">{course.course_name}</span>
-                              <span className="text-xs text-gray-500 ml-1">
-                                ({course.course_code ?? '---'}
-                                {course.total_credits ? ` · ${course.total_credits} TC` : ''}
-                                {course.is_active === false ? ' · Ngưng' : ''}
-                                )
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : <span className="text-gray-400">-</span>}
-                    </td>
-                    <td className="p-2">
-                      <button onClick={() => openEditModal(p)} className="text-blue-600 hover:underline">Sửa</button>
-                      <button onClick={() => handleDelete(p.id)} className="text-red-600 hover:underline ml-2">Xóa</button>
+                      <div className="flex flex-wrap gap-3">
+                        <button onClick={() => openEditModal(p)} className="text-blue-600 hover:underline">Sửa</button>
+                        <button onClick={() => handleDelete(p.id)} className="text-red-600 hover:underline">Xóa</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
