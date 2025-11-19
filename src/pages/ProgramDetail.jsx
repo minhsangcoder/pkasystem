@@ -640,19 +640,22 @@ function ProgramDetail() {
       )}
 
       {showAddCourseModal && (
-        <div className="fixed inset-0 z-[10001] flex items-center justify-center">
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center overflow-y-auto">
           <div className="absolute inset-0 bg-black/40" onClick={closeAddCourseModal} />
-          <div className="relative bg-white w-full max-w-md rounded-xl shadow-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Thêm học phần vào chương trình</h3>
-              <button onClick={closeAddCourseModal} className="text-gray-500 hover:text-gray-700 text-xl px-2">✕</button>
+          <div className="relative bg-white w-full max-w-md rounded-xl shadow-xl my-8 flex flex-col max-h-[90vh]">
+            <div className="p-6 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Thêm học phần vào chương trình</h3>
+                <button onClick={closeAddCourseModal} className="text-gray-500 hover:text-gray-700 text-xl px-2">✕</button>
+              </div>
             </div>
             {availableCoursesForProgram.length === 0 ? (
-              <div className="text-sm text-gray-500">
+              <div className="px-6 pb-6 text-sm text-gray-500">
                 Tất cả học phần đã được thêm vào chương trình này.
               </div>
             ) : (
-              <form className="space-y-4" onSubmit={handleAddCourseSubmit}>
+              <form className="flex flex-col flex-1 overflow-hidden" onSubmit={handleAddCourseSubmit}>
+                <div className="px-6 overflow-y-auto flex-1 space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Tìm nhanh học phần</label>
                   <input
@@ -742,7 +745,8 @@ function ProgramDetail() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
-                <div className="flex justify-end gap-3 pt-2">
+                </div>
+                <div className="flex justify-end gap-3 p-6 pt-4 border-t bg-white">
                   <button
                     type="button"
                     onClick={closeAddCourseModal}
@@ -765,19 +769,22 @@ function ProgramDetail() {
       )}
 
       {showAddBlockModal && (
-        <div className="fixed inset-0 z-[10001] flex items-center justify-center">
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center overflow-y-auto">
           <div className="absolute inset-0 bg-black/40" onClick={closeAddBlockModal} />
-          <div className="relative bg-white w-full max-w-md rounded-xl shadow-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Thêm khối kiến thức</h3>
-              <button onClick={closeAddBlockModal} className="text-gray-500 hover:text-gray-700 text-xl px-2">✕</button>
+          <div className="relative bg-white w-full max-w-md rounded-xl shadow-xl my-8 flex flex-col max-h-[90vh]">
+            <div className="p-6 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Thêm khối kiến thức</h3>
+                <button onClick={closeAddBlockModal} className="text-gray-500 hover:text-gray-700 text-xl px-2">✕</button>
+              </div>
             </div>
             {availableKnowledgeBlocks.length === 0 ? (
-              <div className="text-sm text-gray-500">
+              <div className="px-6 pb-6 text-sm text-gray-500">
                 Tất cả khối kiến thức đã được gắn vào chương trình này.
               </div>
             ) : (
-              <form className="space-y-4" onSubmit={handleAddKnowledgeBlock}>
+              <form className="flex flex-col flex-1 overflow-hidden" onSubmit={handleAddKnowledgeBlock}>
+                <div className="px-6 overflow-y-auto flex-1 space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Tìm nhanh khối kiến thức</label>
                   <input
@@ -807,7 +814,8 @@ function ProgramDetail() {
                     ))}
                   </select>
                 </div>
-                <div className="flex justify-end gap-3 pt-2">
+                </div>
+                <div className="flex justify-end gap-3 p-6 pt-4 border-t bg-white">
                   <button
                     type="button"
                     onClick={closeAddBlockModal}

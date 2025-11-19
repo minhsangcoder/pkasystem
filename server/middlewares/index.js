@@ -5,9 +5,9 @@ import { corsOptions } from "../config/server.js";
 // CORS middleware
 export const corsMiddleware = cors(corsOptions);
 
-// Body parser middleware
-export const bodyParserJson = bodyParser.json();
-export const bodyParserUrlencoded = bodyParser.urlencoded({ extended: true });
+// Body parser middleware - Tăng limit để hỗ trợ upload ảnh base64
+export const bodyParserJson = bodyParser.json({ limit: '20mb' });
+export const bodyParserUrlencoded = bodyParser.urlencoded({ extended: true, limit: '20mb' });
 export const bodyParserMiddleware = [bodyParserJson, bodyParserUrlencoded];
 
 // Request logging middleware

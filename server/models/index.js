@@ -26,6 +26,14 @@ const Department = sequelize.define("Department", {
     type: DataTypes.TEXT,
     allowNull: true
   },
+  department_type: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: 'department',
+    validate: {
+      isIn: [['school', 'department']]
+    }
+  },
   parent_department_id: {
     type: DataTypes.INTEGER,
     allowNull: true
@@ -65,7 +73,7 @@ const Position = sequelize.define("Position", {
   },
   department_id: {
     type: DataTypes.INTEGER,
-    allowNull: false
+    allowNull: true
   },
   is_active: {
     type: DataTypes.BOOLEAN,
@@ -134,7 +142,7 @@ const Employee = sequelize.define("Employee", {
   },
   department_id: {
     type: DataTypes.INTEGER,
-    allowNull: false
+    allowNull: true
   },
   manager_id: {
     type: DataTypes.INTEGER,
@@ -147,9 +155,29 @@ const Employee = sequelize.define("Employee", {
   salary: {
     type: DataTypes.DECIMAL(12, 2)
   },
+  salary_coefficient: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: true
+  },
+  salary_level: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   status: {
     type: DataTypes.STRING(20),
     defaultValue: 'Active'
+  },
+  faculty_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  management_positions: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  avatar_url: {
+    type: DataTypes.TEXT,
+    allowNull: true
   }
 }, {
   tableName: "employees",
@@ -209,6 +237,10 @@ const Course = sequelize.define("Course", {
   concurrent_course_ids: DataTypes.TEXT,
   learning_objectives: DataTypes.TEXT,
   department_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  faculty_id: {
     type: DataTypes.INTEGER,
     allowNull: true
   },
@@ -631,6 +663,7 @@ Employee.belongsTo(Position, { foreignKey: 'position_id' });
 CourseCategory.hasMany(Course, { foreignKey: 'category_id' });
 Course.belongsTo(CourseCategory, { foreignKey: 'category_id', as: 'CourseCategory' });
 Course.belongsTo(Department, { foreignKey: 'department_id', as: 'Department' });
+Course.belongsTo(Faculty, { foreignKey: 'faculty_id', as: 'Faculty' });
 Course.belongsTo(Employee, { foreignKey: 'created_by', as: 'CreatedBy' });
 
 Course.hasMany(CourseSession, { foreignKey: 'course_id' });
@@ -706,6 +739,14 @@ CurriculumStructure.associate = (models) => {
 // Faculty – Dean (Employee)
 Employee.hasMany(Faculty, { foreignKey: 'dean_id', as: 'ManagedFaculties' });
 Faculty.belongsTo(Employee, { foreignKey: 'dean_id', as: 'Dean' });
+
+// Faculty – Department (Đơn vị trực thuộc)
+Faculty.belongsTo(Department, { foreignKey: 'department_id', as: 'Department' });
+Department.hasMany(Faculty, { foreignKey: 'department_id', as: 'Faculties' });
+
+// Employee – Faculty (Khoa công tác)
+Faculty.hasMany(Employee, { foreignKey: 'faculty_id', as: 'Employees' });
+Employee.belongsTo(Faculty, { foreignKey: 'faculty_id', as: 'Faculty' });
 
 // Faculty – Major
 Faculty.hasMany(Major, { foreignKey: 'faculty_id', as: 'Majors' });

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Edit, Trash2, Search, Building2, Users, CheckCircle2, Calendar, Filter } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { facultyAPI, majorAPI, userAPI } from '@/services/api'
+import { facultyAPI, majorAPI, userAPI, departmentAPI } from '@/services/api'
 
 const defaultFormState = {
   faculty_code: '',
@@ -11,6 +11,7 @@ const defaultFormState = {
   dean_id: '',
   contact_email: '',
   contact_phone: '',
+  department_id: '',
   major_ids: [],
   is_active: true
 }
@@ -26,6 +27,7 @@ const FacultyManagement = ({
   const [faculties, setFaculties] = useState([])
   const [lecturers, setLecturers] = useState([])
   const [majors, setMajors] = useState([])
+  const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -43,10 +45,11 @@ const FacultyManagement = ({
   const loadData = async () => {
     try {
       setLoading(true)
-      const [facultyRes, lecturerRes, majorRes] = await Promise.all([
+      const [facultyRes, lecturerRes, majorRes, deptRes] = await Promise.all([
         facultyAPI.getAll(),
         userAPI.getAllByRole('lecturer'),
-        majorAPI.getAll()
+        majorAPI.getAll(),
+        departmentAPI.getAll()
       ])
       setFaculties(facultyRes.data || [])
       setLecturers(
@@ -57,6 +60,7 @@ const FacultyManagement = ({
         }))
       )
       setMajors(majorRes.data || [])
+      setDepartments(deptRes.data || [])
     } catch (error) {
       toast.error(error.message)
     } finally {
@@ -109,6 +113,13 @@ const FacultyManagement = ({
     return majors.filter((major) => major.major_name.toLowerCase().includes(keyword))
   }, [majors, departmentSearch])
 
+  const hasFacultyRelations = (faculty) => {
+    const hasMajors = Array.isArray(faculty.major_ids) && faculty.major_ids.length > 0
+    const hasDepartments = (Array.isArray(faculty.department_list) && faculty.department_list.length > 0) || Boolean(faculty.department_id)
+    const hasDean = Boolean(faculty.dean_id)
+    return hasMajors || hasDepartments || hasDean
+  }
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target)) {
@@ -133,6 +144,18 @@ const FacultyManagement = ({
   const handleEdit = (faculty) => {
     setModalType('edit')
     setSelectedFaculty(faculty)
+    // Xử lý department_id: ưu tiên department_id trực tiếp, sau đó Department?.id, cuối cùng là empty string
+    // Debug: log để kiểm tra
+    console.log('Edit faculty:', {
+      department_id: faculty.department_id,
+      Department: faculty.Department,
+      fullFaculty: faculty
+    })
+    
+    const deptId = faculty.department_id !== null && faculty.department_id !== undefined
+      ? (typeof faculty.department_id === 'number' ? faculty.department_id : Number(faculty.department_id))
+      : (faculty.Department?.id ? Number(faculty.Department.id) : '')
+    
     setFormData({
       faculty_code: faculty.faculty_code || '',
       faculty_name: faculty.faculty_name || '',
@@ -141,6 +164,7 @@ const FacultyManagement = ({
       dean_id: faculty.dean_id || '',
       contact_email: faculty.contact_email || '',
       contact_phone: faculty.contact_phone || '',
+      department_id: deptId === null ? '' : deptId,
       major_ids: faculty.major_ids || [],
       is_active: Boolean(faculty.is_active)
     })
@@ -148,6 +172,11 @@ const FacultyManagement = ({
   }
 
   const handleDelete = async (faculty) => {
+    if (hasFacultyRelations(faculty)) {
+      toast.error('Không thể xóa khoa vì đang có dữ liệu liên kết.')
+      return
+    }
+
     if (!window.confirm(`Bạn có chắc chắn muốn xóa khoa "${faculty.faculty_name}"?`)) {
       return
     }
@@ -164,11 +193,17 @@ const FacultyManagement = ({
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
+      // Chuẩn hóa department_id: nếu là empty string thì chuyển thành null, nếu là số thì giữ nguyên
+      const submitData = {
+        ...formData,
+        department_id: formData.department_id === '' ? null : (typeof formData.department_id === 'number' ? formData.department_id : Number(formData.department_id))
+      }
+      
       if (modalType === 'create') {
-        await facultyAPI.create(formData)
+        await facultyAPI.create(submitData)
         toast.success('Thêm khoa thành công')
       } else if (selectedFaculty) {
-        await facultyAPI.update(selectedFaculty.id, formData)
+        await facultyAPI.update(selectedFaculty.id, submitData)
         toast.success('Cập nhật khoa thành công')
       }
       setShowModal(false)
@@ -309,7 +344,7 @@ const FacultyManagement = ({
                   <th className="table-header">Thông tin</th>
                   <th className="table-header">Trưởng khoa</th>
                   <th className="table-header">Ngày thành lập</th>
-                  <th className="table-header">Ngành trực thuộc</th>
+                  <th className="table-header">Đơn vị trực thuộc</th>
                   <th className="table-header">Liên hệ</th>
                   <th className="table-header">Trạng thái</th>
                   <th className="table-header w-32">Thao tác</th>
@@ -338,14 +373,10 @@ const FacultyManagement = ({
                       </div>
                     </td>
                     <td className="table-cell">
-                    {getFacultyMajorNames(faculty.id).length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                        {getFacultyMajorNames(faculty.id).map((name) => (
-                          <span key={`${faculty.id}-${name}`} className="px-2.5 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">
-                            {name}
-                            </span>
-                          ))}
-                        </div>
+                      {faculty.Department?.department_name || faculty.department_name ? (
+                        <span className="text-sm text-gray-900">
+                          {faculty.Department?.department_name || faculty.department_name}
+                        </span>
                       ) : (
                         <span className="text-gray-400 text-sm">Chưa có</span>
                       )}
@@ -391,11 +422,14 @@ const FacultyManagement = ({
 
       {showModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-10 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {modalType === 'create' ? 'Thêm khoa mới' : 'Chỉnh sửa khoa'}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative top-10 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white my-8 flex flex-col max-h-[90vh]">
+            <div className="pb-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {modalType === 'create' ? 'Thêm khoa mới' : 'Chỉnh sửa khoa'}
+              </h3>
+            </div>
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="overflow-y-auto flex-1 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mã khoa *</label>
@@ -444,6 +478,22 @@ const FacultyManagement = ({
                     className="input-field"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Đơn vị trực thuộc</label>
+                <select
+                  value={formData.department_id === '' ? '' : String(formData.department_id)}
+                  onChange={(e) => setFormData({ ...formData, department_id: e.target.value ? Number(e.target.value) : '' })}
+                  className="input-field"
+                >
+                  <option value="">Chọn đơn vị</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.department_name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -564,8 +614,8 @@ const FacultyManagement = ({
                 />
                 <span className="text-sm text-gray-900">Đang hoạt động</span>
               </label>
-
-              <div className="flex justify-end space-x-3 pt-2">
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t mt-4">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">
                   Hủy
                 </button>

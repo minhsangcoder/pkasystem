@@ -293,12 +293,16 @@ const CohortManagement = () => {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-start py-10 z-50">
-          <div className="bg-white rounded-md p-6 w-full max-w-xl shadow-lg">
-            <h3 className="text-lg font-semibold mb-4">
-              {modalType === 'create' ? 'Thêm khóa học mới' : 'Chỉnh sửa khóa học'}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto z-50">
+          <div className="min-h-screen flex items-start justify-center py-10 px-4">
+            <div className="bg-white rounded-md w-full max-w-xl shadow-lg my-8 flex flex-col max-h-[90vh]">
+              <div className="p-6 pb-4">
+                <h3 className="text-lg font-semibold mb-4">
+                  {modalType === 'create' ? 'Thêm khóa học mới' : 'Chỉnh sửa khóa học'}
+                </h3>
+              </div>
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                <div className="px-6 overflow-y-auto flex-1 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-gray-700">Mã khóa *</label>
@@ -384,13 +388,15 @@ const CohortManagement = () => {
                 </select>
               </div>
 
-              <div className="flex justify-end space-x-3">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Hủy</button>
-                <button type="submit" className="btn-primary">
-                  {modalType === 'create' ? 'Tạo mới' : 'Cập nhật'}
-                </button>
-              </div>
-            </form>
+                </div>
+                <div className="flex justify-end space-x-3 p-6 pt-4 border-t bg-white">
+                  <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Hủy</button>
+                  <button type="submit" className="btn-primary">
+                    {modalType === 'create' ? 'Tạo mới' : 'Cập nhật'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

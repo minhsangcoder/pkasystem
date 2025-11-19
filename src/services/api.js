@@ -118,6 +118,7 @@ const normalizeFacultyPayload = (data) => ({
   dean_id: data.dean_id || null,
   contact_email: data.contact_email || null,
   contact_phone: data.contact_phone || null,
+  department_id: data.department_id || null,
   major_ids: Array.isArray(data.major_ids) ? data.major_ids : []
 })
 

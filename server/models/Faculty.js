@@ -46,6 +46,10 @@ const Faculty = sequelize.define("Faculty", {
     type: DataTypes.STRING(20),
     allowNull: true
   },
+  department_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   department_list: {
     type: DataTypes.TEXT,
     allowNull: true

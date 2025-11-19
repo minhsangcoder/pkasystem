@@ -18,6 +18,9 @@ function ProgramManagement() {
   const [majors, setMajors] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [startYearFilter, setStartYearFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   const [modalForm, setModalForm] = useState({
     program_code: '',
@@ -91,6 +94,25 @@ function ProgramManagement() {
     fetchCourses()
     fetchMajors()
   }, [])
+
+  const filteredPrograms = programs.filter((program) => {
+    const keyword = searchKeyword.trim().toLowerCase()
+    const matchKeyword =
+      !keyword ||
+      (program.program_code && program.program_code.toLowerCase().includes(keyword)) ||
+      (program.program_name && program.program_name.toLowerCase().includes(keyword))
+
+    const matchYear =
+      !startYearFilter ||
+      String(program.start_year || '').includes(startYearFilter.trim())
+
+    const matchStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'active' && program.is_active) ||
+      (statusFilter === 'inactive' && !program.is_active)
+
+    return matchKeyword && matchYear && matchStatus
+  })
 
   const buildProgramFormFromRecord = (record, overrides = {}) => {
     if (!record) {
@@ -252,6 +274,33 @@ function ProgramManagement() {
         <button onClick={openCreateModal} className="btn-primary flex items-center space-x-2">
           <span>+ Thêm chương trình đào tạo</span>
         </button>
+      </div>
+      <div className="flex flex-col md:flex-row gap-3 mb-4">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Tìm theo mã hoặc tên chương trình..."
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+        <input
+          type="text"
+          placeholder="Lọc năm bắt đầu..."
+          value={startYearFilter}
+          onChange={(e) => setStartYearFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none w-full md:w-48"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none w-full md:w-48"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="active">Hoạt động</option>
+          <option value="inactive">Ngừng hoạt động</option>
+        </select>
       </div>
       {/* Modal for Add/Edit */}
       {showModal && (
@@ -423,7 +472,7 @@ function ProgramManagement() {
                 </tr>
               </thead>
               <tbody>
-                {programs.map((p) => (
+                {filteredPrograms.map((p) => (
                   <tr key={p.id} className="border-t">
                     <td className="p-2">{p.program_code}</td>
                     <td className="p-2">{p.program_name}</td>

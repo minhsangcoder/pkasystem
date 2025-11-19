@@ -188,7 +188,7 @@ const EmployeeManagement = () => {
                   <td className="table-cell">{emp.full_name}</td>
                   <td className="table-cell">{emp.gender}</td>
                   <td className="table-cell">{emp.position}</td>
-                  <td className="table-cell">{emp.organization_unit_id}</td>
+                  <td className="table-cell">{emp.OrganizationUnit?.name || 'Đại Học Phenikaa'}</td>
                   <td className="table-cell">
                     <div className="flex items-center">
                       <Mail className="w-4 h-4 text-gray-400 mr-2" />
@@ -215,12 +215,16 @@ const EmployeeManagement = () => {
 
       {/* Modal thêm/sửa */}
       {showModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-2xl">
-            <h3 className="text-lg font-semibold mb-4">
-              {modalType === 'create' ? 'Thêm nhân sự' : 'Chỉnh sửa nhân sự'}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto z-50">
+          <div className="min-h-screen flex items-start justify-center py-10 px-4">
+            <div className="bg-white rounded-lg shadow-md w-full max-w-2xl my-8 flex flex-col max-h-[90vh]">
+              <div className="p-6 pb-4">
+                <h3 className="text-lg font-semibold mb-4">
+                  {modalType === 'create' ? 'Thêm nhân sự' : 'Chỉnh sửa nhân sự'}
+                </h3>
+              </div>
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                <div className="px-6 overflow-y-auto flex-1 space-y-3">
               <input type="text" placeholder="Mã nhân sự" value={formData.user_id}
                 onChange={(e) => setFormData({ ...formData, user_id: e.target.value })} className="input-field" required />
               <input type="text" placeholder="Họ và tên" value={formData.full_name}
@@ -229,8 +233,8 @@ const EmployeeManagement = () => {
                 onChange={(e) => setFormData({ ...formData, position: e.target.value })} className="input-field" required />
               <input type="text" placeholder="Học vị (nếu có)" value={formData.degree}
                 onChange={(e) => setFormData({ ...formData, degree: e.target.value })} className="input-field" />
-              <input type="text" placeholder="Đơn vị công tác" value={formData.organization_unit_id}
-                onChange={(e) => setFormData({ ...formData, organization_unit_id: e.target.value })} className="input-field" required />
+              <input type="text" placeholder="Đơn vị công tác (để trống = Đại Học Phenikaa)" value={formData.organization_unit_id || ''}
+                onChange={(e) => setFormData({ ...formData, organization_unit_id: e.target.value })} className="input-field" />
               <input type="email" placeholder="Email" value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="input-field" />
               <input type="text" placeholder="Số điện thoại" value={formData.phone}
@@ -247,11 +251,13 @@ const EmployeeManagement = () => {
                 <option value="Đang làm việc">Đang làm việc</option>
                 <option value="Nghỉ việc">Nghỉ việc</option>
               </select>
-              <div className="flex justify-end space-x-3">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Hủy</button>
-                <button type="submit" className="btn-primary">Lưu</button>
-              </div>
-            </form>
+                </div>
+                <div className="flex justify-end space-x-3 p-6 pt-4 border-t bg-white">
+                  <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Hủy</button>
+                  <button type="submit" className="btn-primary">Lưu</button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

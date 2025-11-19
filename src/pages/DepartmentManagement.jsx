@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Search, Filter, Building, Users, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { departmentAPI, positionAPI } from '@/services/api'
+import { departmentAPI, positionAPI, userAPI, facultyAPI } from '@/services/api'
 import FacultyManagement from '@/pages/FacultyManagement'
 
 const DepartmentManagement = () => {
   const [activeTab, setActiveTab] = useState('departments')
   const [departments, setDepartments] = useState([])
   const [positions, setPositions] = useState([])
+  const [facultyList, setFacultyList] = useState([])
+  const [departmentUsage, setDepartmentUsage] = useState({})
+  const [positionUsage, setPositionUsage] = useState({})
   const [searchTerm, setSearchTerm] = useState('')
   const [facultySearchTerm, setFacultySearchTerm] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
@@ -33,13 +37,24 @@ const DepartmentManagement = () => {
     loadData()
   }, [])
 
+  // Tự động set đơn vị mặc định khi tạo mới chức vụ
+  useEffect(() => {
+    if (activeTab === 'positions' && showModal && modalType === 'create') {
+      // Set "Đại Học Phenikaa" làm mặc định (giá trị đặc biệt "phenikaa")
+      if (!formData.department_id || formData.department_id === '') {
+        setFormData(prev => ({ ...prev, department_id: 'phenikaa' }))
+      }
+    }
+  }, [activeTab, modalType, showModal])
+
   // Load dữ liệu từ API
   const loadData = async () => {
     try {
       setLoading(true)
       await Promise.all([
         loadDepartments(),
-        loadPositions()
+        loadPositions(),
+        loadUsageData()
       ])
     } catch (error) {
       console.error('Error loading data:', error)
@@ -71,16 +86,73 @@ const DepartmentManagement = () => {
     }
   }
 
+  const loadUsageData = async () => {
+    try {
+      const [staffRes, lecturerRes, facultyRes] = await Promise.all([
+        userAPI.getAllByRole('staff'),
+        userAPI.getAllByRole('lecturer'),
+        facultyAPI.getAll()
+      ])
+      setFacultyList(facultyRes.data || [])
+
+      const deptUsage = {}
+      const posUsage = {}
+
+      const increment = (map, rawKey) => {
+        if (rawKey === undefined || rawKey === null || rawKey === '' || rawKey === 'phenikaa') return
+        const key = String(rawKey)
+        map[key] = (map[key] || 0) + 1
+      }
+
+      const allUsers = [
+        ...(staffRes.data || []),
+        ...(lecturerRes.data || [])
+      ]
+
+      allUsers.forEach(user => {
+        increment(deptUsage, user.organization_unit_id ?? user.department_id)
+        increment(posUsage, user.position_id)
+      })
+
+      setDepartmentUsage(deptUsage)
+      setPositionUsage(posUsage)
+    } catch (error) {
+      console.error('Error loading usage data:', error)
+    }
+  }
+
   // Bộ lọc tìm kiếm
-  const filteredDepartments = departments.filter(dept =>
-    (dept.department_name && dept.department_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (dept.department_code && dept.department_code.toLowerCase().includes(searchTerm.toLowerCase()))
-  )
+  const filteredDepartments = departments.filter(dept => {
+    const matchesSearch = 
+      (dept.department_name && dept.department_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (dept.department_code && dept.department_code.toLowerCase().includes(searchTerm.toLowerCase()))
+    
+    const matchesType = typeFilter === 'all' || dept.department_type === typeFilter
+    
+    return matchesSearch && matchesType
+  })
 
   const filteredPositions = positions.filter(pos =>
     (pos.position_name && pos.position_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (pos.position_code && pos.position_code.toLowerCase().includes(searchTerm.toLowerCase()))
   )
+
+  const getDepartmentRelationIssues = (deptId) => {
+    if (!deptId) return []
+    const key = String(deptId)
+    const issues = []
+    if (departmentUsage[key]) issues.push('nhân sự trực thuộc')
+    if (positions.some(pos => pos.department_id && String(pos.department_id) === key)) issues.push('chức vụ trực thuộc')
+    if (facultyList.some(fac => fac.department_id && String(fac.department_id) === key)) issues.push('khoa trực thuộc')
+    if (departments.some(dep => dep.parent_department_id && String(dep.parent_department_id) === key)) issues.push('đơn vị con')
+    return issues
+  }
+
+  const getPositionRelationIssues = (positionId) => {
+    if (!positionId) return []
+    const key = String(positionId)
+    return positionUsage[key] ? ['nhân sự đang sử dụng'] : []
+  }
 
   // CRUD operations
   const handleCreate = () => {
@@ -91,17 +163,19 @@ const DepartmentManagement = () => {
         department_code: '',
         department_name: '',
         description: '',
+        department_type: 'department',
         parent_department_id: '',
         manager_id: '',
         is_active: true
       })
     } else {
+      // Set "Đại Học Phenikaa" làm mặc định (giá trị đặc biệt "phenikaa")
       setFormData({
         position_code: '',
         position_name: '',
         description: '',
         level: 1,
-        department_id: '',
+        department_id: 'phenikaa',
         is_active: true
       })
     }
@@ -116,17 +190,19 @@ const DepartmentManagement = () => {
         department_code: item.department_code || '',
         department_name: item.department_name || '',
         description: item.description || '',
+        department_type: item.department_type || 'department',
         parent_department_id: item.parent_department_id || '',
         manager_id: item.manager_id || '',
         is_active: item.is_active !== undefined ? item.is_active : true
       })
     } else {
+      // Nếu department_id là null hoặc không có, set thành "phenikaa"
       setFormData({
         position_code: item.position_code || '',
         position_name: item.position_name || '',
         description: item.description || '',
         level: item.level || 1,
-        department_id: item.department_id || '',
+        department_id: item.department_id ? String(item.department_id) : 'phenikaa',
         is_active: item.is_active !== undefined ? item.is_active : true
       })
     }
@@ -134,6 +210,22 @@ const DepartmentManagement = () => {
   }
 
   const handleDelete = async (item) => {
+    if (activeTab === 'departments') {
+      const issues = getDepartmentRelationIssues(item.id)
+      if (issues.length > 0) {
+        toast.error(`Không thể xóa đơn vị vì còn ${issues.join(', ')}.`)
+        return
+      }
+    }
+
+    if (activeTab === 'positions') {
+      const issues = getPositionRelationIssues(item.id)
+      if (issues.length > 0) {
+        toast.error(`Không thể xóa chức vụ vì ${issues.join(', ')}.`)
+        return
+      }
+    }
+
     const itemName = item.department_name || item.position_name
     if (!window.confirm(`Bạn có chắc chắn muốn xóa ${itemName}?`)) return
 
@@ -141,12 +233,11 @@ const DepartmentManagement = () => {
       if (activeTab === 'departments') {
         await departmentAPI.delete(item.id)
         toast.success('Xóa phòng ban thành công!')
-        loadDepartments()
       } else {
         await positionAPI.delete(item.id)
         toast.success('Xóa chức vụ thành công!')
-        loadPositions()
       }
+      await loadData()
     } catch (error) {
       console.error('Delete error:', error)
       toast.error(error.message)
@@ -160,21 +251,29 @@ const DepartmentManagement = () => {
       if (activeTab === 'departments') {
         if (modalType === 'create') {
           await departmentAPI.create(formData)
-          toast.success('Tạo phòng ban thành công!')
+          toast.success('Tạo đơn vị mới thành công!')
         } else {
           await departmentAPI.update(selectedItem.id, formData)
-          toast.success('Cập nhật phòng ban thành công!')
+          toast.success('Cập nhật đơn vị thành công!')
         }
-        loadDepartments()
+        await loadData()
       } else {
+        // Xử lý department_id: nếu là "phenikaa" thì gửi null, ngược lại convert sang number
+        let submitData = { ...formData }
+        if (submitData.department_id === 'phenikaa' || submitData.department_id === '') {
+          submitData.department_id = null
+        } else if (submitData.department_id) {
+          submitData.department_id = parseInt(submitData.department_id)
+        }
+        
         if (modalType === 'create') {
-          await positionAPI.create(formData)
+          await positionAPI.create(submitData)
           toast.success('Tạo chức vụ thành công!')
         } else {
-          await positionAPI.update(selectedItem.id, formData)
+          await positionAPI.update(selectedItem.id, submitData)
           toast.success('Cập nhật chức vụ thành công!')
         }
-        loadPositions()
+        await loadData()
       }
       setShowModal(false)
     } catch (error) {
@@ -203,10 +302,11 @@ const DepartmentManagement = () => {
         </div>
       ) : (
         <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+            <thead className="bg-gray-50">
             <tr>
               <th className="table-header">Mã đơn vị</th>
               <th className="table-header">Tên đơn vị</th>
+              <th className="table-header">Loại đơn vị</th>
               <th className="table-header">Mô tả</th>
               <th className="table-header">Trạng thái</th>
               <th className="table-header">Thao tác</th>
@@ -217,6 +317,13 @@ const DepartmentManagement = () => {
               <tr key={dept.id} className="hover:bg-gray-50">
                 <td className="table-cell font-medium text-blue-600">{dept.department_code}</td>
                 <td className="table-cell">{dept.department_name}</td>
+                <td className="table-cell">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    dept.department_type === 'school' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {dept.department_type === 'school' ? 'Trường' : 'Phòng ban'}
+                  </span>
+                </td>
                 <td className="table-cell max-w-xs truncate">{dept.description || 'Chưa có mô tả'}</td>
                 <td className="table-cell">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -266,8 +373,7 @@ const DepartmentManagement = () => {
             <tr>
               <th className="table-header">Mã chức vụ</th>
               <th className="table-header">Tên chức vụ</th>
-              <th className="table-header">Cấp độ</th>
-              <th className="table-header">Phòng ban</th>
+              <th className="table-header">Đơn vị</th>
               <th className="table-header">Mô tả</th>
               <th className="table-header">Trạng thái</th>
               <th className="table-header">Thao tác</th>
@@ -278,8 +384,7 @@ const DepartmentManagement = () => {
               <tr key={pos.id} className="hover:bg-gray-50">
                 <td className="table-cell font-medium text-blue-600">{pos.position_code}</td>
                 <td className="table-cell">{pos.position_name}</td>
-                <td className="table-cell">{pos.level}</td>
-                <td className="table-cell">{pos.Department?.department_name || 'Chưa có'}</td>
+                <td className="table-cell">{pos.Department?.department_name || 'Đại Học Phenikaa'}</td>
                 <td className="table-cell max-w-xs truncate">{pos.description || 'Chưa có mô tả'}</td>
                 <td className="table-cell">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -436,6 +541,17 @@ const DepartmentManagement = () => {
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
+          {activeTab === 'departments' && (
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">Tất cả loại đơn vị</option>
+              <option value="school">Trường</option>
+              <option value="department">Phòng ban</option>
+            </select>
+          )}
           <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">
             <Filter className="w-5 h-5" />
             <span>Bộ lọc</span>
@@ -462,14 +578,16 @@ const DepartmentManagement = () => {
       {/* Modal */}
       {showModal && !isFacultyTab && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white my-8 flex flex-col max-h-[90vh]">
+            <div className="mt-3 pb-4">
               <h3 className="text-lg font-medium text-gray-900 mb-4">
                 {modalType === 'create' 
                   ? `Thêm ${activeTab === 'departments' ? 'đơn vị' : 'chức vụ'} mới`
                   : `Chỉnh sửa ${activeTab === 'departments' ? 'đơn vị' : 'chức vụ'}`}
               </h3>
-              <form onSubmit={handleSubmit} className="space-y-4">
+            </div>
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="overflow-y-auto flex-1 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Mã {activeTab === 'departments' ? 'đơn vị' : 'chức vụ'} *
@@ -504,6 +622,23 @@ const DepartmentManagement = () => {
                   />
                 </div>
 
+                {activeTab === 'departments' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Loại đơn vị *
+                    </label>
+                    <select
+                      value={formData.department_type || 'department'}
+                      onChange={(e) => setFormData({...formData, department_type: e.target.value})}
+                      className="input-field"
+                      required
+                    >
+                      <option value="school">Trường</option>
+                      <option value="department">Phòng ban</option>
+                    </select>
+                  </div>
+                )}
+
                 {activeTab === 'positions' && (
                   <>
                     <div>
@@ -524,17 +659,16 @@ const DepartmentManagement = () => {
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Phòng ban *
+                        Đơn vị
                       </label>
                       <select
-                        value={formData.department_id || ''}
+                        value={formData.department_id || 'phenikaa'}
                         onChange={(e) => setFormData({...formData, department_id: e.target.value})}
                         className="input-field"
-                        required
                       >
-                        <option value="">Chọn đơn vị</option>
+                        <option value="phenikaa">Đại Học Phenikaa (Mặc định)</option>
                         {departments.map(dept => (
-                          <option key={dept.id} value={dept.id}>{dept.department_name}</option>
+                          <option key={dept.id} value={String(dept.id)}>{dept.department_name}</option>
                         ))}
                       </select>
                     </div>
@@ -567,24 +701,23 @@ const DepartmentManagement = () => {
                     <option value="false">Không hoạt động</option>
                   </select>
                 </div>
-
-                <div className="flex justify-end space-x-3 pt-4">
-                  <button 
-                    type="button" 
-                    onClick={() => setShowModal(false)} 
-                    className="btn-secondary"
-                  >
-                    Hủy
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="btn-primary"
-                  >
-                    {modalType === 'create' ? 'Tạo mới' : 'Cập nhật'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t mt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowModal(false)} 
+                  className="btn-secondary"
+                >
+                  Hủy
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-primary"
+                >
+                  {modalType === 'create' ? 'Tạo mới' : 'Cập nhật'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -53,7 +53,7 @@ export const getDepartmentById = async (req, res) => {
 
 export const createDepartment = async (req, res) => {
   try {
-    const { department_code, department_name, description, parent_department_id, manager_id, is_active = true } = req.body;
+    const { department_code, department_name, description, department_type, parent_department_id, manager_id, is_active = true } = req.body;
 
     if (!department_code || !department_name) {
       return res.status(400).json({
@@ -63,11 +63,13 @@ export const createDepartment = async (req, res) => {
 
     const cleanParentDepartmentId = parent_department_id === '' ? null : parent_department_id;
     const cleanManagerId = manager_id === '' ? null : manager_id;
+    const cleanDepartmentType = department_type || 'department';
 
     const department = await Department.create({
       department_code,
       department_name,
       description,
+      department_type: cleanDepartmentType,
       parent_department_id: cleanParentDepartmentId,
       manager_id: cleanManagerId,
       is_active
@@ -108,13 +110,34 @@ export const deleteDepartment = async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy phòng ban" });
     }
 
-    const employeeCount = await Employee.count({
-      where: { department_id: req.params.id }
-    });
+    const [employeeCount, facultyCount, positionCount, childCount] = await Promise.all([
+      Employee.count({ where: { department_id: req.params.id } }),
+      Faculty.count({ where: { department_id: req.params.id } }),
+      Position.count({ where: { department_id: req.params.id } }),
+      Department.count({ where: { parent_department_id: req.params.id } })
+    ]);
 
     if (employeeCount > 0) {
       return res.status(400).json({
-        error: "Không thể xóa phòng ban có nhân viên"
+        error: "Không thể xóa phòng ban vì đang có nhân sự trực thuộc"
+      });
+    }
+
+    if (positionCount > 0) {
+      return res.status(400).json({
+        error: "Không thể xóa phòng ban vì đang có chức vụ trực thuộc"
+      });
+    }
+
+    if (facultyCount > 0) {
+      return res.status(400).json({
+        error: "Không thể xóa phòng ban vì đang có khoa trực thuộc"
+      });
+    }
+
+    if (childCount > 0) {
+      return res.status(400).json({
+        error: "Không thể xóa phòng ban vì đang có đơn vị con"
       });
     }
 
@@ -185,6 +208,111 @@ const updateFacultyDepartmentListSnapshot = async (faculty, majorIds) => {
   await faculty.update({ department_list: names.length ? serializeDepartmentList(names) : null });
 };
 
+// Helper function để đồng bộ trưởng khoa từ Employee (khi cập nhật chức vụ quản lý)
+const syncDeanFromEmployee = async (employeeId, facultyId, managementPositions) => {
+  if (!employeeId || !facultyId) return;
+  
+  const positions = managementPositions 
+    ? String(managementPositions).split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+  
+  const isDean = positions.includes('Trưởng khoa') || positions.includes('Phó trưởng khoa');
+  
+  if (isDean) {
+    // Tìm khoa hiện tại mà employee này đang là trưởng khoa
+    const currentDeanFaculties = await Faculty.findAll({
+      where: { dean_id: employeeId }
+    });
+    
+    // Bỏ trưởng khoa của các khoa khác
+    for (const faculty of currentDeanFaculties) {
+      if (faculty.id !== facultyId) {
+        await faculty.update({ dean_id: null });
+      }
+    }
+    
+    // Cập nhật trưởng khoa cho khoa mới
+    const faculty = await Faculty.findByPk(facultyId);
+    if (faculty) {
+      await faculty.update({ dean_id: employeeId });
+    }
+  } else {
+    // Nếu không còn là trưởng khoa, bỏ dean_id của tất cả khoa
+    await Faculty.update(
+      { dean_id: null },
+      { where: { dean_id: employeeId } }
+    );
+  }
+};
+
+// Helper function để đồng bộ chức vụ quản lý từ Faculty (khi cập nhật dean_id)
+const syncManagementPositionsFromFaculty = async (facultyId, deanId) => {
+  if (!facultyId) return;
+  
+  const faculty = await Faculty.findByPk(facultyId);
+  if (!faculty) return;
+  
+  // Nếu có dean_id mới
+  if (deanId) {
+    // Tìm các khoa khác mà employee này đang là trưởng khoa
+    const otherFaculties = await Faculty.findAll({
+      where: { 
+        dean_id: deanId,
+        id: { [Op.ne]: facultyId }
+      }
+    });
+    
+    // Bỏ trưởng khoa của các khoa khác
+    for (const otherFaculty of otherFaculties) {
+      await otherFaculty.update({ dean_id: null });
+    }
+    
+    // Cập nhật management_positions cho employee
+    const employee = await Employee.findByPk(deanId);
+    if (employee) {
+      const currentPositions = employee.management_positions
+        ? String(employee.management_positions).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+      
+      // Thêm "Trưởng khoa" nếu chưa có
+      if (!currentPositions.includes('Trưởng khoa') && !currentPositions.includes('Phó trưởng khoa')) {
+        currentPositions.push('Trưởng khoa');
+        // Bỏ "Không có" nếu có
+        const filtered = currentPositions.filter(p => p !== 'Không có');
+        await employee.update({ 
+          management_positions: filtered.join(', '),
+          faculty_id: facultyId 
+        });
+      } else {
+        // Đảm bảo faculty_id được cập nhật
+        await employee.update({ faculty_id: facultyId });
+      }
+    }
+  } else {
+    // Nếu bỏ trưởng khoa, tìm employee cũ và cập nhật
+    const oldDeanId = faculty.dean_id;
+    if (oldDeanId) {
+      const oldEmployee = await Employee.findByPk(oldDeanId);
+      if (oldEmployee) {
+        const currentPositions = oldEmployee.management_positions
+          ? String(oldEmployee.management_positions).split(',').map(s => s.trim()).filter(Boolean)
+          : [];
+        
+        // Bỏ "Trưởng khoa" và "Phó trưởng khoa" khỏi management_positions
+        const filtered = currentPositions.filter(p => 
+          p !== 'Trưởng khoa' && p !== 'Phó trưởng khoa'
+        );
+        
+        // Nếu không còn chức vụ nào, thêm "Không có"
+        const finalPositions = filtered.length > 0 ? filtered : ['Không có'];
+        await oldEmployee.update({ 
+          management_positions: finalPositions.join(', ')
+        });
+      }
+    }
+  }
+};
+
 const facultyIncludeConfig = [
   {
     model: Employee,
@@ -195,6 +323,11 @@ const facultyIncludeConfig = [
     model: Major,
     as: "Majors",
     attributes: ["id", "major_name"]
+  },
+  {
+    model: Department,
+    as: "Department",
+    attributes: ["id", "department_name", "department_code"]
   }
 ];
 
@@ -207,6 +340,8 @@ const formatFacultyResponse = (facultyInstance) => {
   if (data.Dean) {
     data.dean_name = `${data.Dean.first_name || ""} ${data.Dean.last_name || ""}`.trim();
   }
+  // Giữ lại Department trong response để frontend có thể sử dụng
+  // data.Department sẽ chứa thông tin đơn vị trực thuộc
   delete data.Majors;
   return data;
 };
@@ -315,11 +450,17 @@ export const createFaculty = async (req, res) => {
       dean_id,
       contact_email,
       contact_phone,
+      department_id,
       major_ids = []
     } = req.body;
     if (!faculty_code || !faculty_name) {
       return res.status(400).json({ error: "Mã khoa và tên khoa là bắt buộc" });
     }
+
+    // Xử lý department_id: nếu là 0, empty string, hoặc undefined thì set null
+    const cleanDepartmentId = department_id && department_id !== '' && department_id !== 0 
+      ? Number(department_id) 
+      : null;
 
     const faculty = await Faculty.create({
       faculty_code,
@@ -330,11 +471,17 @@ export const createFaculty = async (req, res) => {
       dean_id: dean_id || null,
       contact_email: contact_email || null,
       contact_phone: contact_phone || null,
+      department_id: cleanDepartmentId,
       department_list: null
     });
 
     const assignedMajorIds = await syncFacultyMajors(faculty.id, major_ids);
     await updateFacultyDepartmentListSnapshot(faculty, assignedMajorIds);
+
+    // Đồng bộ management_positions khi tạo faculty với dean_id
+    if (dean_id) {
+      await syncManagementPositionsFromFaculty(faculty.id, dean_id);
+    }
 
     const created = await Faculty.findByPk(faculty.id, {
       include: facultyIncludeConfig
@@ -368,8 +515,23 @@ export const updateFaculty = async (req, res) => {
     if (updateData.contact_phone === '') {
       updateData.contact_phone = null;
     }
+    // Xử lý department_id: nếu là 0, empty string, hoặc undefined thì set null, ngược lại convert sang number
+    if (updateData.department_id !== undefined) {
+      updateData.department_id = (updateData.department_id && updateData.department_id !== '' && updateData.department_id !== 0)
+        ? Number(updateData.department_id)
+        : null;
+    }
+
+    // Lưu dean_id cũ trước khi cập nhật
+    const oldDeanId = faculty.dean_id;
+    const newDeanId = updateData.dean_id !== undefined ? (updateData.dean_id || null) : oldDeanId;
 
     await faculty.update(updateData);
+
+    // Đồng bộ management_positions khi thay đổi dean_id
+    if (updateData.dean_id !== undefined && newDeanId !== oldDeanId) {
+      await syncManagementPositionsFromFaculty(faculty.id, newDeanId);
+    }
 
     if (Array.isArray(major_ids)) {
       const assignedMajorIds = await syncFacultyMajors(faculty.id, major_ids);
@@ -1128,6 +1290,7 @@ export const getAllCourses = async (req, res) => {
       include: [
         { model: CourseCategory, as: "CourseCategory", required: false, attributes: ["id", "category_name"] },
         { model: Department, as: "Department", required: false, attributes: ["id", "department_name"] },
+        { model: Faculty, as: "Faculty", required: false, attributes: ["id", "faculty_name", "faculty_code"] },
         { model: Employee, as: "CreatedBy", required: false, attributes: ["id", "first_name", "last_name"] }
       ],
       order: [["created_at", "DESC"]]
@@ -1144,6 +1307,7 @@ export const getCourseById = async (req, res) => {
       include: [
         { model: CourseCategory, as: "CourseCategory", required: false },
         { model: Department, as: "Department", required: false },
+        { model: Faculty, as: "Faculty", required: false },
         { model: Employee, as: "CreatedBy", required: false }
       ]
     });
@@ -1162,7 +1326,7 @@ export const createCourse = async (req, res) => {
       course_code, course_name, description, category_id,
       duration_hours, total_credits, theory_credits, practice_credits, level,
       prerequisite_course_ids, concurrent_course_ids, learning_objectives,
-      department_id, created_by, is_active = true
+      department_id, faculty_id, created_by, is_active = true
     } = req.body;
 
     if (!course_code || !course_name) {
@@ -1171,13 +1335,14 @@ export const createCourse = async (req, res) => {
 
     if (category_id === "" || category_id === undefined) category_id = null;
     if (department_id === "" || department_id === undefined) department_id = null;
+    if (faculty_id === "" || faculty_id === undefined) faculty_id = null;
     if (created_by === "" || created_by === undefined) created_by = null;
 
     const course = await Course.create({
       course_code, course_name, description, category_id,
       duration_hours, total_credits, theory_credits, practice_credits, level,
       prerequisite_course_ids, concurrent_course_ids, learning_objectives,
-      department_id, created_by, is_active
+      department_id, faculty_id, created_by, is_active
     });
 
     res.status(201).json(course);
@@ -1197,7 +1362,7 @@ export const updateCourse = async (req, res) => {
       "course_name", "description", "category_id", "duration_hours",
       "total_credits", "theory_credits", "practice_credits", "level",
       "prerequisite_course_ids", "concurrent_course_ids", "learning_objectives",
-      "department_id", "is_active"
+      "department_id", "faculty_id", "is_active"
     ];
 
     await course.update(req.body, { fields: allowedFields });
@@ -1761,11 +1926,11 @@ export const getAllPositions = async (req, res) => {
 export const createPosition = async (req, res) => {
   try {
     const { position_code, position_name, level, description, department_id, is_active = true } = req.body;
-    const cleanDepartmentId = department_id === '' ? null : department_id;
+    const cleanDepartmentId = department_id === '' || department_id === null || department_id === undefined ? null : department_id;
 
-    if (!position_code || !position_name || !cleanDepartmentId) {
+    if (!position_code || !position_name) {
       return res.status(400).json({
-        error: "Mã chức vụ, tên chức vụ và phòng ban là bắt buộc"
+        error: "Mã chức vụ và tên chức vụ là bắt buộc"
       });
     }
 
@@ -1786,7 +1951,14 @@ export const updatePosition = async (req, res) => {
     if (!position) {
       return res.status(404).json({ error: "Không tìm thấy chức vụ" });
     }
-    await position.update(req.body);
+    
+    // Xử lý department_id: nếu là empty string hoặc null thì set thành null
+    const updateData = { ...req.body };
+    if (updateData.department_id === '' || updateData.department_id === null || updateData.department_id === undefined) {
+      updateData.department_id = null;
+    }
+    
+    await position.update(updateData);
     res.json(position);
   } catch (error) {
     handleError(res, error, "Không thể cập nhật chức vụ");
@@ -1807,9 +1979,22 @@ export const deletePosition = async (req, res) => {
 };
 
 // ===================== Users =====================
+const normalizeDepartmentIdValue = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (value === '' || value === 'phenikaa') return null;
+  const numericValue = Number(value);
+  return Number.isNaN(numericValue) ? null : numericValue;
+};
+
 // Map employee to user format for frontend compatibility
 const mapEmployeeToUser = (emp) => {
+  if (!emp) return null;
   const empData = emp.toJSON();
+  const managementPositionsStr = empData.management_positions || '';
+  const managementPositionsArr = managementPositionsStr 
+    ? String(managementPositionsStr).split(',').map(s => s.trim()).filter(Boolean)
+    : [];
   return {
     ...empData,
     full_name: `${empData.first_name || ''} ${empData.last_name || ''}`.trim(),
@@ -1820,7 +2005,12 @@ const mapEmployeeToUser = (emp) => {
     degree: empData.degree || null,
     degrees: empData.degree ? String(empData.degree).split(',').map(s => s.trim()).filter(Boolean) : [],
     position: empData.Position?.position_name || null,
-    OrganizationUnit: empData.Department ? { id: empData.Department.id, name: empData.Department.department_name } : null
+    // Nếu department_id là null, hiển thị "Đại Học Phenikaa" mặc định
+    OrganizationUnit: empData.Department 
+      ? { id: empData.Department.id, name: empData.Department.department_name } 
+      : { id: null, name: 'Đại Học Phenikaa' },
+    Faculty: empData.Faculty ? { id: empData.Faculty.id, faculty_code: empData.Faculty.faculty_code, faculty_name: empData.Faculty.faculty_name } : null,
+    management_positions: managementPositionsArr
   };
 };
 
@@ -1836,7 +2026,8 @@ export const getAllUsers = async (req, res) => {
       where,
       include: [
         { model: Department, attributes: ['id', 'department_name', 'department_code'] },
-        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] }
+        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] },
+        { model: Faculty, as: 'Faculty', attributes: ['id', 'faculty_code', 'faculty_name'] }
       ],
       order: [['created_at', 'DESC']]
     });
@@ -1853,7 +2044,8 @@ export const getUserById = async (req, res) => {
     const employee = await Employee.findByPk(req.params.id, {
       include: [
         { model: Department, attributes: ['id', 'department_name', 'department_code'] },
-        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] }
+        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] },
+        { model: Faculty, as: 'Faculty', attributes: ['id', 'faculty_code', 'faculty_name'] }
       ]
     });
     if (!employee) {
@@ -1873,7 +2065,8 @@ export const createUser = async (req, res) => {
       user_id, full_name, role, gender, degree, position, organization_unit_id,
       email, phone, address, active,
       employee_code, first_name, last_name, employee_type,
-      position_id, department_id, manager_id, hire_date, salary, status
+      position_id, department_id, manager_id, hire_date, salary, status,
+      salary_coefficient, salary_level, avatar_url, faculty_id, management_positions
     } = req.body;
 
     let employeeData = {};
@@ -1900,11 +2093,28 @@ export const createUser = async (req, res) => {
       employeeData.degree = degree;
     }
     employeeData.position_id = position_id || position;
-    employeeData.department_id = department_id || organization_unit_id;
+    const normalizedOrgUnitId = normalizeDepartmentIdValue(organization_unit_id);
+    const normalizedDepartmentId = normalizeDepartmentIdValue(department_id);
+    if (normalizedOrgUnitId !== undefined) {
+      employeeData.department_id = normalizedOrgUnitId;
+    } else if (normalizedDepartmentId !== undefined) {
+      employeeData.department_id = normalizedDepartmentId;
+    } else {
+      employeeData.department_id = null;
+    }
     employeeData.manager_id = manager_id;
     employeeData.hire_date = hire_date || new Date().toISOString().split('T')[0];
     employeeData.salary = salary;
+    employeeData.salary_coefficient = salary_coefficient !== undefined && salary_coefficient !== '' ? Number(salary_coefficient) : null;
+    employeeData.salary_level = salary_level !== undefined && salary_level !== '' ? Number(salary_level) : null;
     employeeData.status = status || (active === 'Đang làm việc' ? 'Active' : 'Inactive');
+    employeeData.faculty_id = faculty_id || null;
+    if (management_positions !== undefined) {
+      employeeData.management_positions = management_positions || null;
+    }
+    if (avatar_url !== undefined) {
+      employeeData.avatar_url = avatar_url || null;
+    }
 
     if (!employeeData.position_id) {
       let fallbackDepartmentId = employeeData.department_id;
@@ -1931,19 +2141,29 @@ export const createUser = async (req, res) => {
       }
     }
 
+    // Cho phép department_id là null cho giảng viên (đơn vị mặc định là "Đại Học Phenikaa")
+    const isLecturer = employeeData.employee_type === 'lecturer';
     if (!employeeData.employee_code || !employeeData.first_name || !employeeData.last_name || 
-        !employeeData.email || !employeeData.position_id || !employeeData.department_id) {
+        !employeeData.email || !employeeData.position_id || (!isLecturer && !employeeData.department_id)) {
       return res.status(400).json({
-        error: "Mã nhân viên, họ tên, email, chức vụ và phòng ban là bắt buộc"
+        error: isLecturer 
+          ? "Mã nhân viên, họ tên, email và chức vụ là bắt buộc"
+          : "Mã nhân viên, họ tên, email, chức vụ và phòng ban là bắt buộc"
       });
     }
 
     const employee = await Employee.create(employeeData);
     
+    // Đồng bộ dean_id sau khi tạo employee
+    if (employeeData.faculty_id && employeeData.management_positions) {
+      await syncDeanFromEmployee(employee.id, employeeData.faculty_id, employeeData.management_positions);
+    }
+    
     const newEmployee = await Employee.findByPk(employee.id, {
       include: [
         { model: Department, attributes: ['id', 'department_name', 'department_code'] },
-        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] }
+        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] },
+        { model: Faculty, as: 'Faculty', attributes: ['id', 'faculty_code', 'faculty_name'] }
       ]
     });
     
@@ -1965,7 +2185,9 @@ export const updateUser = async (req, res) => {
       user_id, full_name, role, gender, degree, position, organization_unit_id,
       email, phone, address, active,
       employee_code, first_name, last_name, employee_type,
-      position_id, department_id, manager_id, hire_date, salary, status
+      position_id, department_id, manager_id, hire_date, salary, status,
+      faculty_id, management_positions, salary_coefficient, salary_level,
+      avatar_url
     } = req.body;
 
     const updateData = {};
@@ -1994,20 +2216,51 @@ export const updateUser = async (req, res) => {
     }
     if (position_id !== undefined) updateData.position_id = position_id;
     if (position !== undefined && position !== '') updateData.position_id = position;
-    if (department_id !== undefined && department_id !== '') updateData.department_id = department_id;
-    if (organization_unit_id !== undefined && organization_unit_id !== '') updateData.department_id = organization_unit_id;
+    const normalizedUpdateDepartmentId = normalizeDepartmentIdValue(department_id);
+    if (normalizedUpdateDepartmentId !== undefined) {
+      updateData.department_id = normalizedUpdateDepartmentId;
+    }
+    // Cho phép organization_unit_id là null (để set department_id = null cho "Đại Học Phenikaa")
+    const normalizedUpdateOrgUnitId = normalizeDepartmentIdValue(organization_unit_id);
+    if (normalizedUpdateOrgUnitId !== undefined) {
+      updateData.department_id = normalizedUpdateOrgUnitId;
+    }
     if (manager_id !== undefined) updateData.manager_id = manager_id === '' ? null : manager_id;
     if (hire_date !== undefined) updateData.hire_date = hire_date;
     if (salary !== undefined) updateData.salary = salary;
+    if (salary_coefficient !== undefined) updateData.salary_coefficient = salary_coefficient === '' ? null : (salary_coefficient ? Number(salary_coefficient) : null);
+    if (salary_level !== undefined) updateData.salary_level = salary_level === '' ? null : (salary_level ? Number(salary_level) : null);
     if (status !== undefined) updateData.status = status;
     if (active !== undefined) updateData.status = active === 'Đang làm việc' ? 'Active' : 'Inactive';
+    // Lưu giá trị cũ trước khi cập nhật
+    const oldFacultyId = employee.faculty_id;
+    const oldManagementPositions = employee.management_positions;
+    
+    if (faculty_id !== undefined) updateData.faculty_id = faculty_id === '' ? null : faculty_id;
+    if (management_positions !== undefined) {
+      updateData.management_positions = management_positions === '' ? null : management_positions;
+    }
+    if (avatar_url !== undefined) {
+      updateData.avatar_url = avatar_url === '' ? null : avatar_url;
+    }
 
     await employee.update(updateData);
+    
+    // Đồng bộ dean_id khi thay đổi faculty_id hoặc management_positions
+    const newFacultyId = updateData.faculty_id !== undefined ? updateData.faculty_id : oldFacultyId;
+    const newManagementPositions = updateData.management_positions !== undefined 
+      ? updateData.management_positions 
+      : oldManagementPositions;
+    
+    if ((newFacultyId !== oldFacultyId || newManagementPositions !== oldManagementPositions) && newFacultyId) {
+      await syncDeanFromEmployee(employee.id, newFacultyId, newManagementPositions);
+    }
     
     const updatedEmployee = await Employee.findByPk(req.params.id, {
       include: [
         { model: Department, attributes: ['id', 'department_name', 'department_code'] },
-        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] }
+        { model: Position, attributes: ['id', 'position_name', 'position_code', 'level'] },
+        { model: Faculty, as: 'Faculty', attributes: ['id', 'faculty_code', 'faculty_name'] }
       ]
     });
     

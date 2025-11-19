@@ -3,13 +3,14 @@ import {
   Plus, Edit, Trash2, Search, Filter, BookOpen, Clock, GraduationCap, Building2, Link as LinkIcon
 } from 'lucide-react'
 import Select from 'react-select'
-import { courseAPI, courseCategoryAPI, departmentAPI } from '@/services/api'
+import { courseAPI, courseCategoryAPI, departmentAPI, facultyAPI } from '@/services/api'
 import toast from 'react-hot-toast'
 
 const SubjectManagement = () => {
   const [courses, setCourses] = useState([])
   const [categories, setCategories] = useState([])
   const [departments, setDepartments] = useState([])
+  const [faculties, setFaculties] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [departmentFilter, setDepartmentFilter] = useState('all')
@@ -26,6 +27,7 @@ const SubjectManagement = () => {
     theory_credits: '',
     practice_credits: '',
     managing_department_id: '',
+    managing_faculty_id: '',
     category_id: '',
     duration_hours: '',
     level: 'Beginner',
@@ -52,7 +54,7 @@ const SubjectManagement = () => {
   const loadData = async () => {
     try {
       setLoading(true)
-      await Promise.all([loadCourses(), loadCategories(), loadDepartments()])
+      await Promise.all([loadCourses(), loadCategories(), loadDepartments(), loadFaculties()])
     } catch (error) {
       toast.error('Không thể tải dữ liệu')
     } finally {
@@ -100,6 +102,13 @@ const SubjectManagement = () => {
     try {
       const res = await departmentAPI.getAll()
       setDepartments(res.data || [])
+    } catch { }
+  }
+
+  const loadFaculties = async () => {
+    try {
+      const res = await facultyAPI.getAll()
+      setFaculties(res.data || [])
     } catch { }
   }
 
@@ -152,6 +161,7 @@ const SubjectManagement = () => {
       theory_credits: '',
       practice_credits: '',
       managing_department_id: '',
+      managing_faculty_id: '',
       category_id: '',
       duration_hours: '',
       level: 'Beginner',
@@ -173,7 +183,8 @@ const SubjectManagement = () => {
       total_credits: course.total_credits || '',
       theory_credits: course.theory_credits || '',
       practice_credits: course.practice_credits || '',
-      managing_department_id: course.managing_department_id || '',
+      managing_department_id: course.managing_department_id || course.department_id || '',
+      managing_faculty_id: course.managing_faculty_id || course.faculty_id || '',
       category_id: course.category_id || '',
       duration_hours: course.duration_hours || '',
       level: course.level || 'Beginner',
@@ -209,6 +220,8 @@ const SubjectManagement = () => {
 
       const processedData = {
         ...formData,
+        faculty_id: formData.managing_faculty_id || null,
+        department_id: formData.managing_department_id || null,
         prerequisite_course_ids: Array.isArray(formData.prerequisite_course_ids)
           ? JSON.stringify(formData.prerequisite_course_ids)
           : '[]',
@@ -219,6 +232,9 @@ const SubjectManagement = () => {
           ? JSON.stringify(formData.prior_course_ids)
           : '[]'
       }
+      // Xóa các field không cần thiết
+      delete processedData.managing_department_id
+      delete processedData.managing_faculty_id
 
       if (modalType === 'create') {
         await courseAPI.create(processedData)
@@ -353,7 +369,7 @@ const SubjectManagement = () => {
                   <td className="table-cell">
                     <div className="flex items-center">
                       <Building2 className="w-4 h-4 text-gray-400 mr-1" />
-                      {c.Department?.department_name || departments.find(d => d.id === c.managing_department_id)?.department_name || 'N/A'}
+                      {c.Faculty?.faculty_name || faculties.find(f => f.id === c.faculty_id)?.faculty_name || c.Department?.department_name || departments.find(d => d.id === c.managing_department_id || d.id === c.department_id)?.department_name || 'N/A'}
                     </div>
                   </td>
                   <td className="table-cell">{getCourseNamesByIds(c.prerequisite_course_ids)}</td>
@@ -376,15 +392,18 @@ const SubjectManagement = () => {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white w-full max-w-4xl rounded-xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">{modalType === 'create' ? 'Thêm học phần' : 'Chỉnh sửa học phần'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+          <div className="relative bg-white w-full max-w-4xl rounded-xl shadow-xl my-8 flex flex-col max-h-[90vh]">
+            <div className="p-6 pb-4">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">{modalType === 'create' ? 'Thêm học phần' : 'Chỉnh sửa học phần'}</h2>
+                <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+              </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-6 overflow-y-auto flex-1 space-y-6">
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div>
       <label className="block text-sm font-medium mb-1">Mã học phần *</label>
@@ -419,34 +438,18 @@ const SubjectManagement = () => {
     ></textarea>
   </div>
 
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div>
-      <label className="block text-sm font-medium mb-1">Danh mục</label>
-      <select
-        value={formData.category_id}
-        onChange={e => setFormData({ ...formData, category_id: e.target.value })}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-      >
-        <option value="">Chọn danh mục</option>
-        {categories.map(c => (
-          <option key={c.id} value={c.id}>{c.category_name}</option>
-        ))}
-      </select>
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium mb-1">Khoa quản lý</label>
-      <select
-        value={formData.department_id}
-        onChange={e => setFormData({ ...formData, department_id: e.target.value })}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-      >
-        <option value="">Chọn khoa</option>
-        {departments.map(d => (
-          <option key={d.id} value={d.id}>{d.department_name}</option>
-        ))}
-      </select>
-    </div>
+  <div>
+    <label className="block text-sm font-medium mb-1">Khoa quản lý</label>
+    <select
+      value={formData.managing_faculty_id || ''}
+      onChange={e => setFormData({ ...formData, managing_faculty_id: e.target.value })}
+      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+    >
+      <option value="">Chọn khoa</option>
+      {faculties.map(f => (
+        <option key={f.id} value={f.id}>{f.faculty_name} ({f.faculty_code})</option>
+      ))}
+    </select>
   </div>
 
   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -538,22 +541,23 @@ const SubjectManagement = () => {
     </label>
   </div>
 
-  <div className="flex justify-end space-x-3 pt-4 border-t">
-    <button
-      type="button"
-      onClick={() => setShowModal(false)}
-      className="px-4 py-2 rounded-md bg-gray-200 hover:bg-gray-300 text-gray-700"
-    >
-      Hủy
-    </button>
-    <button
-      type="submit"
-      className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white"
-    >
-      {modalType === "create" ? "Tạo mới" : "Lưu thay đổi"}
-    </button>
-  </div>
-</form>
+              </div>
+              <div className="flex justify-end space-x-3 p-6 pt-4 border-t bg-white">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 rounded-md bg-gray-200 hover:bg-gray-300 text-gray-700"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {modalType === "create" ? "Tạo mới" : "Lưu thay đổi"}
+                </button>
+              </div>
+            </form>
 
           </div>
         </div>

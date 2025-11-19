@@ -139,9 +139,15 @@ export default function TuitionDetail() {
     }
   }
 
-  const availablePrograms = programs.filter(p =>
-    (majorDetail?.programs || []).some(sp => sp.id === p.id)
-  )
+  const availablePrograms = programs.filter(program => {
+    if (!majorDetail) return false
+    const programMajorId = program.major_id || program.Major?.id
+    if (programMajorId && String(programMajorId) === String(majorDetail.id)) {
+      return true
+    }
+    // fallback: if API chưa trả major_id, kiểm tra danh sách program của majorDetail
+    return (majorDetail.programs || []).some(sp => sp.id === program.id)
+  })
 
   return (
     <div className="space-y-8">
@@ -201,6 +207,7 @@ export default function TuitionDetail() {
                   {availablePrograms.map(program => (
                     <option key={program.id} value={program.id}>
                       {program.program_code} - {program.program_name}
+                      {program.start_year ? ` (Năm ${program.start_year})` : ''}
                     </option>
                   ))}
                 </select>

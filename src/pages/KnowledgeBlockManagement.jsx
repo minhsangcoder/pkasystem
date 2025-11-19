@@ -237,9 +237,12 @@ const KnowledgeBlockManagement = () => {
 
       {showModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">{modalType === 'create' ? 'Thêm khối mới' : 'Chỉnh sửa khối'}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white my-8 flex flex-col max-h-[90vh]">
+            <div className="pb-4">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">{modalType === 'create' ? 'Thêm khối mới' : 'Chỉnh sửa khối'}</h3>
+            </div>
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="overflow-y-auto flex-1 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mã khối *</label>
@@ -293,7 +296,8 @@ const KnowledgeBlockManagement = () => {
                   <span className="ml-2 text-sm text-gray-900">Hoạt động</span>
                 </label>
               </div>
-              <div className="flex justify-end space-x-3 pt-4">
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t mt-4">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Hủy</button>
                 <button type="submit" className="btn-primary">{modalType === 'create' ? 'Tạo mới' : 'Cập nhật'}</button>
               </div>
