@@ -7,6 +7,8 @@ export default function TuitionCalculator() {
   const navigate = useNavigate();
   const [majorsWithPrograms, setMajorsWithPrograms] = useState([]);
   const [loadingMajors, setLoadingMajors] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
 
   useEffect(() => {
     loadMajorsWithPrograms();
@@ -24,6 +26,26 @@ export default function TuitionCalculator() {
     }
   };
 
+  const filteredMajors = majorsWithPrograms.filter((major) => {
+    const keyword = searchTerm.trim().toLowerCase();
+    const yearKeyword = yearFilter.trim();
+
+    const matchKeyword =
+      !keyword ||
+      (major.major_name && major.major_name.toLowerCase().includes(keyword)) ||
+      (major.major_code && major.major_code.toLowerCase().includes(keyword));
+
+    const matchYear =
+      !yearKeyword ||
+      (major.latest_year && String(major.latest_year).includes(yearKeyword)) ||
+      (Array.isArray(major.programs) &&
+        major.programs.some((program) =>
+          program.start_year && String(program.start_year).includes(yearKeyword)
+        ));
+
+    return matchKeyword && matchYear;
+  });
+
   return (
     <div className="space-y-6 p-6">
       {/* Danh sách ngành với chương trình đào tạo của năm mới nhất */}
@@ -31,17 +53,38 @@ export default function TuitionCalculator() {
         <h2 className="text-2xl font-bold mb-4">Tính học phí</h2>
         <p className="text-gray-600 mb-6">Danh sách các ngành đào tạo với chương trình đào tạo của năm mới nhất</p>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mb-6">
+          <div>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Tìm kiếm theo mã hoặc tên ngành..."
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <input
+              type="text"
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              placeholder="Lọc theo năm bắt đầu chương trình..."
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
         {loadingMajors ? (
           <div className="text-center py-8">
             <p className="text-gray-500">Đang tải dữ liệu...</p>
           </div>
-        ) : majorsWithPrograms.length === 0 ? (
+        ) : filteredMajors.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-500">Không có dữ liệu ngành học</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {majorsWithPrograms.map(major => (
+            {filteredMajors.map(major => (
               <div key={major.id} className="bg-white border rounded-lg shadow-sm p-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
@@ -72,6 +115,7 @@ export default function TuitionCalculator() {
                           <th className="border border-gray-300 px-4 py-2 text-center">Năm bắt đầu</th>
                           <th className="border border-gray-300 px-4 py-2 text-center">Tổng tín chỉ</th>
                           <th className="border border-gray-300 px-4 py-2 text-right">Giá tín chỉ</th>
+                          <th className="border border-gray-300 px-4 py-2 text-right">Học phí tối thiểu</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -90,6 +134,11 @@ export default function TuitionCalculator() {
                                 ? new Intl.NumberFormat('vi-VN').format(program.price_per_credit) + ' đ'
                                 : '-'
                               }
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2 text-right">
+                              {typeof program.total_credits === 'number' && typeof program.price_per_credit === 'number'
+                                ? new Intl.NumberFormat('vi-VN').format(program.total_credits * program.price_per_credit) + ' đ'
+                                : '-'}
                             </td>
                           </tr>
                         ))}

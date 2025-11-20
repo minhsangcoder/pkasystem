@@ -378,7 +378,7 @@ const FacultyManagement = ({
                           {faculty.Department?.department_name || faculty.department_name}
                         </span>
                       ) : (
-                        <span className="text-gray-400 text-sm">Chưa có</span>
+                        <span className="text-sm text-gray-900">Đại Học Phenikaa</span>
                       )}
                     </td>
                     <td className="table-cell text-sm">

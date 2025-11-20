@@ -284,7 +284,9 @@ export default function TuitionDetail() {
             {majorTuitionByYears && (
               <div className="mt-6 space-y-4">
                 {majorTuitionByYears.years?.length ? (
-                  majorTuitionByYears.years.map(yearData => (
+                  [...majorTuitionByYears.years]
+                    .sort((a, b) => (b.year || 0) - (a.year || 0))
+                    .map(yearData => (
                     <div key={yearData.year} className="border border-gray-200 rounded-2xl p-4">
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <h4 className="text-lg font-semibold text-gray-900">Năm {yearData.year}</h4>

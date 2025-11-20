@@ -12,8 +12,7 @@ const SubjectManagement = () => {
   const [departments, setDepartments] = useState([])
   const [faculties, setFaculties] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('all')
-  const [departmentFilter, setDepartmentFilter] = useState('all')
+  const [schoolFilter, setSchoolFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('create')
@@ -113,14 +112,44 @@ const SubjectManagement = () => {
   }
 
   // ===== Filtering =====
+  // Lấy danh sách các khoa (Faculty) thuộc trường (Department loại 'school') đã chọn
+  const getFacultiesBySchool = (schoolId) => {
+    if (schoolId === 'all') return new Set()
+    const selectedSchoolId = parseInt(schoolId)
+    // Lấy các khoa có department_id = selectedSchoolId (thuộc trường)
+    return new Set(
+      faculties
+        .filter(faculty => faculty.department_id === selectedSchoolId)
+        .map(faculty => faculty.id)
+    )
+  }
+  
   const filteredCourses = courses.filter(course => {
     const matchSearch =
       (course.course_name && course.course_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (course.course_code && course.course_code.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchCategory = categoryFilter === 'all' || course.category_id === parseInt(categoryFilter)
-    const matchDept = departmentFilter === 'all' || course.managing_department_id === parseInt(departmentFilter)
-    return matchSearch && matchCategory && matchDept
+    
+    // Lọc theo trường (Department loại 'school'): hiển thị các học phần thuộc trường hoặc thuộc các khoa của trường
+    if (schoolFilter === 'all') {
+      return matchSearch
+    }
+    
+    const selectedSchoolId = parseInt(schoolFilter)
+    const facultyIds = getFacultiesBySchool(schoolFilter)
+    
+    // Học phần trực tiếp thuộc trường (qua department_id)
+    const belongsToSchool = course.department_id === selectedSchoolId || 
+                           course.managing_department_id === selectedSchoolId
+    
+    // Học phần thuộc các khoa của trường (qua faculty_id)
+    const belongsToFaculty = course.faculty_id && facultyIds.has(course.faculty_id) ||
+                            course.managing_faculty_id && facultyIds.has(course.managing_faculty_id)
+    
+    return matchSearch && (belongsToSchool || belongsToFaculty)
   })
+  
+  // Lấy danh sách các trường (Department loại 'school')
+  const schools = departments.filter(dept => dept.department_type === 'school')
 
   // ===== Utility =====
   const getCourseNamesByIds = (ids) => {
@@ -321,13 +350,15 @@ const SubjectManagement = () => {
               className="pl-10 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 w-64"
             />
           </div>
-          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="border rounded-md px-3 py-2">
-            <option value="all">Tất cả danh mục</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.category_name}</option>)}
-          </select>
-          <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} className="border rounded-md px-3 py-2">
-            <option value="all">Tất cả khoa</option>
-            {departments.map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
+          <select 
+            value={schoolFilter} 
+            onChange={e => setSchoolFilter(e.target.value)} 
+            className="border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">Tất cả trường</option>
+            {schools.map(school => (
+              <option key={school.id} value={school.id}>{school.department_name}</option>
+            ))}
           </select>
         </div>
         <button className="flex items-center space-x-2 px-4 py-2 border rounded-md hover:bg-gray-50">

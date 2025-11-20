@@ -304,141 +304,201 @@ function ProgramManagement() {
       </div>
       {/* Modal for Add/Edit */}
       {showModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={closeModal} />
-          <div className="relative bg-white w-full max-w-2xl rounded-xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeModal} />
+          <div className="relative bg-white w-full max-w-3xl rounded-2xl shadow-2xl max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h2 className="text-2xl font-bold text-gray-800">
                 {modalType === 'create' && 'Thêm chương trình đào tạo'}
                 {modalType === 'edit' && 'Chỉnh sửa chương trình đào tạo'}
                 {modalType === 'clone' && 'Sao chép chương trình đào tạo'}
               </h2>
-              <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">✕</button>
+              <button 
+                onClick={closeModal} 
+                className="text-gray-500 hover:text-gray-700 hover:bg-white/50 rounded-full p-2 transition-all duration-200 w-8 h-8 flex items-center justify-center"
+              >
+                <span className="text-xl leading-none">×</span>
+              </button>
             </div>
-            <form onSubmit={handleModalSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Mã chương trình đào tạo *</label>
-                  <input
-                    type="text"
-                    name="program_code"
-                    value={modalForm.program_code}
-                    onChange={handleModalChange}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    required
-                  />
+            
+            {/* Form Content */}
+            <form onSubmit={handleModalSubmit} className="flex-1 overflow-y-auto">
+              <div className="p-6 space-y-6">
+                {/* Section: Thông tin cơ bản */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 pb-2 border-b">
+                    <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
+                    <h3 className="text-lg font-semibold text-gray-800">Thông tin cơ bản</h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Mã chương trình đào tạo <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="program_code"
+                        value={modalForm.program_code}
+                        onChange={handleModalChange}
+                        placeholder="Nhập mã chương trình"
+                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Tên chương trình đào tạo <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="program_name"
+                        value={modalForm.program_name}
+                        onChange={handleModalChange}
+                        placeholder="Nhập tên chương trình"
+                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                        required
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-gray-700">Mô tả</label>
+                    <textarea
+                      name="description"
+                      rows={3}
+                      value={modalForm.description}
+                      onChange={handleModalChange}
+                      placeholder="Nhập mô tả chương trình đào tạo..."
+                      className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none text-gray-800 placeholder-gray-400"
+                    ></textarea>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Tên chương trình đào tạo *</label>
-                  <input
-                    type="text"
-                    name="program_name"
-                    value={modalForm.program_name}
-                    onChange={handleModalChange}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    required
-                  />
+
+                {/* Section: Thông tin ngành học */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 pb-2 border-b">
+                    <div className="w-1 h-6 bg-indigo-600 rounded-full"></div>
+                    <h3 className="text-lg font-semibold text-gray-800">Thông tin ngành học</h3>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-gray-700">Thuộc ngành</label>
+                    <select
+                      name="major_id"
+                      value={modalForm.major_id}
+                      onChange={handleModalChange}
+                      className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800 bg-white"
+                    >
+                      <option value="">-- Chọn ngành học --</option>
+                      {majors.map(major => (
+                        <option key={major.id} value={major.id}>
+                          {major.major_code} - {major.major_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Section: Thông tin thời gian */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 pb-2 border-b">
+                    <div className="w-1 h-6 bg-green-600 rounded-full"></div>
+                    <h3 className="text-lg font-semibold text-gray-800">Thông tin thời gian</h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-gray-700">Ngày bắt đầu</label>
+                      <input
+                        type="date"
+                        name="start_date"
+                        value={modalForm.start_date}
+                        onChange={handleModalChange}
+                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-gray-700">Ngày kết thúc</label>
+                      <input
+                        type="date"
+                        name="end_date"
+                        value={modalForm.end_date}
+                        onChange={handleModalChange}
+                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Năm bắt đầu chương trình <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        name="start_year"
+                        min={2000}
+                        max={CURRENT_YEAR}
+                        value={modalForm.start_year}
+                        onChange={handleModalChange}
+                        placeholder={`Từ 2000 đến ${CURRENT_YEAR}`}
+                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-gray-700">Tổng số tín chỉ</label>
+                      <input
+                        type="number"
+                        name="total_credits"
+                        min={0}
+                        step={1}
+                        value={modalForm.total_credits}
+                        onChange={handleModalChange}
+                        placeholder="Nhập tổng số tín chỉ"
+                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-800 placeholder-gray-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section: Trạng thái */}
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 pb-2 border-b">
+                    <div className="w-1 h-6 bg-purple-600 rounded-full"></div>
+                    <h3 className="text-lg font-semibold text-gray-800">Trạng thái</h3>
+                  </div>
+                  
+                  <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
+                    <input
+                      type="checkbox"
+                      name="is_active"
+                      id="is_active"
+                      checked={modalForm.is_active}
+                      onChange={handleModalChange}
+                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="is_active" className="text-sm font-medium text-gray-700 cursor-pointer">
+                      Chương trình đang hoạt động
+                    </label>
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Mô tả</label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  value={modalForm.description}
-                  onChange={handleModalChange}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
-                ></textarea>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Thuộc ngành</label>
-                <select
-                  name="major_id"
-                  value={modalForm.major_id}
-                  onChange={handleModalChange}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="">-- Chọn ngành học --</option>
-                  {majors.map(major => (
-                    <option key={major.id} value={major.id}>
-                      {major.major_code} - {major.major_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Ngày bắt đầu</label>
-                  <input
-                    type="date"
-                    name="start_date"
-                    value={modalForm.start_date}
-                    onChange={handleModalChange}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Ngày kết thúc</label>
-                  <input
-                    type="date"
-                    name="end_date"
-                    value={modalForm.end_date}
-                    onChange={handleModalChange}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Năm bắt đầu chương trình *</label>
-                  <input
-                    type="number"
-                    name="start_year"
-                    min={2000}
-                    max={CURRENT_YEAR}
-                    value={modalForm.start_year}
-                    onChange={handleModalChange}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Tổng số tín chỉ</label>
-                  <input
-                    type="number"
-                    name="total_credits"
-                    min={0}
-                    step={1}
-                    value={modalForm.total_credits}
-                    onChange={handleModalChange}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center space-x-4 pt-2">
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    name="is_active"
-                    checked={modalForm.is_active}
-                    onChange={handleModalChange}
-                  />
-                  <span>Hoạt động</span>
-                </label>
-              </div>
-              <div className="flex justify-end space-x-3 pt-4 border-t">
+
+              {/* Footer Actions */}
+              <div className="flex justify-end space-x-3 px-6 py-4 border-t bg-gray-50 sticky bottom-0">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 rounded-md bg-gray-200 hover:bg-gray-300 text-gray-700"
+                  className="px-6 py-2.5 rounded-lg bg-white border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 text-gray-700 font-medium transition-all duration-200 shadow-sm"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                  className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium transition-all duration-200 shadow-md hover:shadow-lg"
                 >
                   {modalType === 'create' && 'Tạo mới'}
                   {modalType === 'edit' && 'Lưu thay đổi'}
